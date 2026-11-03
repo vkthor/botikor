@@ -22,7 +22,7 @@ Abre la web de ghostreamy desde el navegador: `http://IP-DEL-DECO:3138`. El puer
    - Aparece una vez por cada red del deco; da igual cuál copies.
    - **Esa dirección lleva el código de tu usuario de ghostreamy: no la compartas.**
 
-> La versión gratuita de ghostreamy solo admite **un cliente a la vez**. BOTikor lo tiene en cuenta para saber qué canal está viendo cada conexión.
+> La versión gratuita de ghostreamy sólo admite **un cliente a la vez**. BOTikor lo tiene en cuenta para saber qué canal está viendo cada conexión.
 
 ## 2. Prepara OpenWebIF
 
@@ -103,13 +103,13 @@ Si algo no va, mira las [preguntas frecuentes](FAQ.md).
 2. Crea una regla:
    - **puerto externo:** el que quieras, por ejemplo `3838`;
    - **IP de destino:** la del deco;
-   - **puerto interno:** el de ghostreamy, normalmente `3138`.
+   - **puerto interno:** el de ghostreamy, normalmente `3939`.
 3. El puerto externo que hayas elegido es el que tiene que tener BOTikor en `GHOST_PORT_EXT` (pregunta 5 del paso 6).
 
 Ten en cuenta:
 
 - Internet está lleno de programas que prueban puertos abiertos: en cuanto abras uno, verás intentos de entrar en el log de ghostreamy. Por eso la **contraseña del usuario de ghostreamy tiene que ser buena**.
-- Si tu operador te da una conexión con **CG-NAT** (frecuente en fibra compartida y en 4G/5G), abrir puertos no funciona. Tendrías que pedirle una IP pública.
+- Si tu operador te da una conexión con **CG-NAT** (frecuente en fibra compartida y en 4G/5G), abrir puertos no funciona. Tendrás que usar tailscale u otras opciones.
 - El enlace de `/canal` lleva la IP pública de tu casa en ese momento, que puede cambiar. Pídelo de nuevo cuando lo necesites.
 
 ## Actualizar
