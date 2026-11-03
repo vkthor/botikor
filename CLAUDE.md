@@ -6,7 +6,7 @@ Responde siempre en español, directo y preciso. Autor: Víctor Cruz (VkThor). S
 `botikor.sh`: bot de Telegram en bash (con Python embebido) que corre como root en un decodificador Enigma2 (Octagon SF8008, OpenSPA 8.3) con el plugin ghostreamy. Lista canales, da URLs de streaming, cambia de canal, enciende/apaga, avisa de grabaciones y de streams, y se actualiza solo. Lo usan también otras personas con configuraciones distintas. Arquitectura, comandos, convenciones y limitaciones: `ARQUITECTURA.md` (leer antes de tocar código).
 
 ## Estado
-- Todo es **beta**. La versión actual es la **1.0.0** (aún sin publicar).
+- Todo es **beta**. Versión publicada: **1.0.0** (release del 2026-11-04). Para publicar otra: subir `VERSION=` en `botikor.sh`, commit, push y `herramientas/publicar_version.sh`.
 - La primera versión publicada en GitHub será la **1.0.0** (decidido por Víctor). No llevar changelog hasta entonces.
 - En el repositorio todo se llama **botikor** (script `botikor.sh`, directorio `/home/root/botikor`, log `botikor.log`). No añadir referencias a nombres antiguos del proyecto: lo relativo a versiones anteriores va en `CLAUDE.local.md`.
 - **Licencia: GPL-3.0** (decidida por Víctor), puesta como `GPL-3.0-or-later` en la cabecera del script.
