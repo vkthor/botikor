@@ -1,0 +1,40 @@
+# Configuración de BOTikor: ejemplo comentado.
+#
+# Lo normal es NO escribir este fichero a mano: la primera vez que lanzas
+# botikor.sh desde una terminal te hace las preguntas y crea botikor.conf
+# él solo. Si prefieres hacerlo a mano, copia este fichero como
+# /home/root/botikor/botikor.conf, rellénalo y protégelo:
+#     chmod 600 /home/root/botikor/botikor.conf
+#
+# Formato: una línea CLAVE=valor por variable, SIN comillas y sin espacios
+# alrededor del "=". El valor llega tal cual hasta el final de la línea, así
+# que una contraseña puede llevar $ " ` \ o espacios. Las líneas que empiezan
+# por # son comentarios. Este fichero lleva el token del bot: no lo compartas.
+
+# Token del bot. Te lo da @BotFather al crearlo (/newbot). Obligatorio.
+TOKEN=
+
+# Número del único chat al que obedece el bot (el tuyo). Obligatorio.
+# Te lo da @userinfobot, o la configuración inicial al escribirle al bot.
+ID=
+
+# Dirección de OpenWebIF (la web del deco). En el propio deco es esta.
+WEBIF=http://127.0.0.1
+
+# Solo si OpenWebIF pide usuario y contraseña; si no, déjalos vacíos.
+WEBIF_USUARIO=
+WEBIF_CLAVE=
+
+# Lista de canales que genera ghostreamy (se descarga desde su web).
+GHOSTLIST=/home/root/botikor/lista.m3u8
+
+# Puerto donde escucha ghostreamy dentro del deco. Con "auto" se saca de las
+# URLs de la lista (si no se puede, 3138).
+GHOST_PORT_INT=auto
+
+# Puerto que tu router abre hacia Internet y lleva al de ghostreamy. Solo lo
+# usa /canal X para darte la URL de fuera de casa. Vacío: el mismo que el interno.
+GHOST_PORT_EXT=
+
+# Puerto de streaming propio de Enigma2. Casi nunca hay que cambiarlo.
+STREAMPORT_NATIVO=8001

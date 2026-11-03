@@ -3,7 +3,8 @@
 # Autor: VkThor. Corre como root dentro del deco y lo maneja por Telegram.
 # Arquitectura, comandos, convenciones, limitaciones y como probarlo:
 # ARQUITECTURA.md.
-# Requiere bash (no ash), curl, wget, python3 y awk/sed/grep (busybox vale).
+# Requiere bash (no ash), curl, python3 y awk/sed/grep (busybox vale).
+# La configuracion de cada instalacion va aparte, en botikor.conf.
 
 # VERSION: formato X.Y.Z (tres enteros). La leen actualizar_botikor y
 # downgrade_botikor con grep '^VERSION=' sobre el fichero descargado y la
@@ -12,8 +13,8 @@
 # fichero que lo haga. Version beta: aun no se lleva historial de cambios.
 VERSION="1.0.0"
 # REPO_GITHUB: repositorio de GitHub donde se publican las versiones. Cada una
-# es una "release" con etiqueta vX.Y.Z y dos ficheros: botikor.sh (copia "de
-# fabrica", con TOKEN e ID vacios) y botikor.sh.sha256 (su huella). Lo usan
+# es una "release" con etiqueta vX.Y.Z y dos ficheros: botikor.sh (sin ninguna
+# configuracion: esta va en botikor.conf) y botikor.sh.sha256 (su huella). Lo usan
 # actualizar_botikor y downgrade_botikor, siempre por HTTPS (ver la nota de
 # seguridad junto a descargar_verificado).
 REPO_GITHUB="vkthor/botikor"
@@ -29,14 +30,361 @@ case "$0" in
 esac
 
 # Directorio de trabajo del bot: aqui viven todos los ficheros relativos que
-# usa el script (log, offset, canales*, listagrabaciones...). Si ya existe,
-# mkdir da un error inofensivo (esta linea corre antes de redirigir la salida
-# al log, asi que solo se ve si se lanza a mano desde una terminal).
-mkdir /home/root/botikor
+# usa el script (log, offset, botikor.conf, canales*, listagrabaciones...).
+mkdir -p /home/root/botikor
 cd /home/root/botikor || exit 1
 
 # Nombre del fichero de log, relativo al directorio de trabajo.
 log=botikor.log
+
+# ============================================================
+
+# CONFIGURACION: botikor.conf
+#
+# La configuracion de cada instalacion vive en $CONF (en el directorio de
+# trabajo, solo legible por root), nunca dentro del script: asi el script se
+# puede actualizar o publicar tal cual. Formato: una linea CLAVE=valor por
+# variable; lineas vacias y las que empiezan por # se ignoran. El valor es
+# literal (sin comillas; si va entero entre comillas, se quitan; los espacios
+# de alrededor se quitan salvo en WEBIF_CLAVE), asi que una contrasena puede
+# llevar $ " ` \ o espacios sin problema. El fichero NUNCA se ejecuta: solo se aceptan las
+# claves de esta lista. Ejemplo comentado: botikor.conf.ejemplo.
+#
+#   TOKEN              el que da @BotFather (obligatorio; nunca va al log)
+#   ID                 id numerico del unico chat autorizado (obligatorio)
+#   WEBIF              direccion de OpenWebIF (http://127.0.0.1)
+#   WEBIF_USUARIO      usuario de OpenWebIF, si pide contrasena (vacio: no)
+#   WEBIF_CLAVE        su contrasena
+#   GHOSTLIST          lista de canales de ghostreamy (lista.m3u8)
+#   GHOST_PORT_INT     puerto donde escucha ghostreamy en el deco; "auto" lo
+#                      saca de las URLs de GHOSTLIST (si no puede, 3138)
+#   GHOST_PORT_EXT     puerto que el router abre hacia Internet y redirige al
+#                      interno; solo lo usa "canal X". Vacio: igual al interno
+#   STREAMPORT_NATIVO  puerto de streaming propio de Enigma2 (8001)
+#
+# Si falta el fichero (o el TOKEN o el ID) y el script se lanza a mano desde
+# una terminal, pregunta los datos y lo crea (configuracion_inicial). En un
+# arranque sin terminal nunca pregunta: lo anota en el log y se cierra. Para
+# cambiar la configuracion: "botikor.sh --configurar" (con el bot parado) o
+# editar el fichero y reiniciar el bot.
+
+# ============================================================
+
+CONF="botikor.conf"
+
+# Valores por defecto (los que no aparezcan en $CONF se quedan asi).
+TOKEN=""
+ID=""
+WEBIF="http://127.0.0.1"
+WEBIF_USUARIO=""
+WEBIF_CLAVE=""
+GHOSTLIST="$(pwd)/lista.m3u8"
+GHOST_PORT_INT="auto"
+GHOST_PORT_EXT=""
+STREAMPORT_NATIVO="8001"
+
+CLAVES_CONF="TOKEN ID WEBIF WEBIF_USUARIO WEBIF_CLAVE GHOSTLIST GHOST_PORT_INT GHOST_PORT_EXT STREAMPORT_NATIVO"
+
+# Lee $CONF. Deja en CONF_AVISOS las lineas que no entiende (para el log).
+leer_conf() {
+	CONF_AVISOS=""
+	[ -f "$CONF" ] || return 1
+	n=0
+	while IFS= read -r linea || [ -n "$linea" ]; do
+		n=$((n + 1))
+		linea="${linea%$'\r'}"
+		# Espacios al principio, fuera (al final no: pueden ser de una contrasena).
+		linea="${linea#"${linea%%[![:space:]]*}"}"
+		case "$linea" in
+			""|\#*) continue ;;
+		esac
+		case "$linea" in
+			*=*) ;;
+			*) CONF_AVISOS="$CONF_AVISOS linea $n sin '=';"; continue ;;
+		esac
+		clave="${linea%%=*}"
+		clave="${clave//[[:space:]]/}"
+		valor="${linea#*=}"
+		# Espacios alrededor del valor: fuera, salvo en la contrasena, que es literal.
+		if [ "$clave" != "WEBIF_CLAVE" ]; then
+			valor="${valor#"${valor%%[![:space:]]*}"}"
+			valor="${valor%"${valor##*[![:space:]]}"}"
+		fi
+		case "$valor" in
+			\"*\"|\'*\') [ ${#valor} -ge 2 ] && valor="${valor:1:${#valor}-2}" ;;
+		esac
+		case " $CLAVES_CONF " in
+			*" $clave "*) printf -v "$clave" '%s' "$valor" ;;
+			*) CONF_AVISOS="$CONF_AVISOS linea $n: clave desconocida '$clave';" ;;
+		esac
+	done < "$CONF"
+	return 0
+}
+
+token_valido() { [[ "$1" =~ ^[0-9]+:[A-Za-z0-9_-]{20,}$ ]]; }
+id_valido() { [[ "$1" =~ ^-?[0-9]+$ ]]; }
+es_puerto() { [[ "$1" =~ ^[0-9]{1,5}$ ]] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ]; }
+
+# Puerto mas repetido en las URLs de la lista de canales ($1), o nada.
+detectar_puerto_ghost() {
+	[ -f "$1" ] || return 1
+	tr -d '\r' < "$1" | sed -nE 's#^https?://([^/@]*@)?[^/:@]+:([0-9]+)/.*#\2#p' \
+		| sort | uniq -c | sort -rn | awk 'NR == 1 { print $2 }'
+}
+
+# Escribe $CONF con los valores actuales, de forma atomica y con permisos 600.
+guardar_conf() {
+	(
+		umask 077
+		{
+			echo "# Configuracion de BOTikor (ver botikor.conf.ejemplo). Generado el $(date '+%d/%m/%Y %H:%M')."
+			echo "# Formato CLAVE=valor, sin comillas. Contiene el token del bot: no compartir."
+			for clave in $CLAVES_CONF; do
+				printf '%s=%s\n' "$clave" "${!clave}"
+			done
+		} > "$CONF.tmp" && chmod 600 "$CONF.tmp" && mv "$CONF.tmp" "$CONF"
+	)
+}
+
+# read para la configuracion inicial: si se cierra la entrada (Ctrl+D) se
+# cancela, en vez de repetir la pregunta sin fin.
+leer_cancelado() {
+	echo
+	echo "Entrada cerrada: configuracion cancelada, no se ha guardado nada."
+	exit 1
+}
+leer() { read -r "$@" || leer_cancelado; }
+
+# Pregunta con valor por defecto: preguntar VARIABLE "texto" "defecto"
+preguntar() {
+	local respuesta
+	if [ -n "$3" ]; then
+		leer -p "$2 [$3]: " respuesta
+	else
+		leer -p "$2: " respuesta
+	fi
+	printf -v "$1" '%s' "${respuesta:-$3}"
+}
+
+# CONFIGURACION INICIAL (interactiva, solo con terminal). Valida el token con
+# getMe, averigua el ID pidiendo a la persona que escriba al bot (getUpdates),
+# prueba OpenWebIF y la lista de canales, y guarda $CONF. Devuelve 1 si se
+# cancela. Corre ANTES de redirigir la salida al log: lo que imprime lo ve
+# la persona en la terminal.
+configuracion_inicial() {
+	local api nombre_bot respuesta datos ultimo intentos chat nombre tipo
+	local codigo detectado n_canales tok
+
+	echo
+	echo "=============================================="
+	echo " BOTikor v$VERSION - configuracion"
+	echo "=============================================="
+	echo "Se guardara en $(pwd)/$CONF (solo lo puede leer root)."
+	echo "Pulsa Intro para aceptar el valor entre corchetes. Ctrl+C cancela."
+
+	# Otro botikor en marcha se "comeria" los mensajes de Telegram.
+	# "sh .../botikor.sh": el bot en marcha, no un editor con el fichero abierto.
+	for p in $(pgrep -f 'sh ([^ ]*/)?botikor\.sh( |$)' 2>/dev/null); do
+		if [ "$p" != "$$" ] && [ "$p" != "$PPID" ]; then
+			echo
+			echo "Hay otro BOTikor en marcha (PID $p). Paralo antes de configurar"
+			echo "(por ejemplo: /etc/init.d/botikor stop) y vuelve a lanzar este comando."
+			return 1
+		fi
+	done
+
+	# 1. Token
+	echo
+	echo "1/5 TOKEN DEL BOT"
+	echo "    Te lo da @BotFather en Telegram al crear el bot (/newbot)."
+	while :; do
+		if [ -n "$TOKEN" ]; then
+			leer -p "    Token [Intro = mantener el actual, ${TOKEN%%:*}:...]: " tok
+			tok="${tok:-$TOKEN}"
+		else
+			leer -p "    Token: " tok
+		fi
+		tok="${tok//[[:space:]]/}"
+		if ! token_valido "$tok"; then
+			echo "    Eso no parece un token (es algo como 123456789:ABCdef...). Prueba otra vez."
+			continue
+		fi
+		api="https://api.telegram.org/bot$tok"
+		nombre_bot=$(curl -s --max-time 15 "$api/getMe" | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    print(d["result"]["username"] if d.get("ok") else "")
+except Exception:
+    pass' 2>/dev/null)
+		if [ -n "$nombre_bot" ]; then
+			echo "    Correcto: el bot es @$nombre_bot"
+			TOKEN="$tok"
+			break
+		fi
+		echo "    Telegram no acepta ese token (o no hay conexion a Internet). Prueba otra vez."
+	done
+
+	# 2. ID del chat
+	echo
+	echo "2/5 TU CHAT"
+	echo "    El bot solo obedecera a un chat. Para saber cual es el tuyo:"
+	echo "    abre Telegram y escribe cualquier cosa a @$nombre_bot (por ejemplo: hola)."
+	if [ -n "$ID" ]; then
+		echo "    (Ahora mismo el autorizado es el $ID. Escribe 'mantener' para no cambiarlo.)"
+	fi
+	echo "    Espero hasta 2 minutos. Si prefieres escribir el ID a mano, pulsa Intro."
+
+	# Se descarta lo que hubiera pendiente: solo cuenta un mensaje nuevo.
+	ultimo=$(curl -s --max-time 15 "$api/getUpdates?offset=-1" | python3 -c '
+import json, sys
+try:
+    r = json.load(sys.stdin).get("result", [])
+    print(r[-1]["update_id"] if r else 0)
+except Exception:
+    print(0)' 2>/dev/null)
+	ultimo=${ultimo:-0}
+
+	chat=""
+	intentos=0
+	while [ -z "$chat" ] && [ $intentos -lt 6 ]; do
+		intentos=$((intentos + 1))
+		# read -t: si la persona pulsa Intro (o escribe algo) se deja de esperar.
+		read -r -t 1 respuesta
+		rc_read=$?
+		if [ $rc_read -eq 0 ]; then
+			[ "$respuesta" = "mantener" ] && [ -n "$ID" ] && chat="$ID"
+			break
+		elif [ $rc_read -le 128 ]; then
+			leer_cancelado
+		fi
+		datos=$(curl -s --max-time 25 "$api/getUpdates?offset=$((ultimo + 1))&timeout=19" | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+if not d.get("ok"):
+    print("ERROR\t%s" % d.get("description", ""))
+    sys.exit(0)
+for u in d.get("result", []):
+    m = u.get("message") or u.get("edited_message")
+    if not m:
+        continue
+    c = m.get("chat", {})
+    nombre = c.get("title") or " ".join(x for x in (c.get("first_name"), c.get("last_name")) if x) or ""
+    if c.get("username"):
+        nombre += " (@%s)" % c["username"]
+    print("%s\t%s\t%s\t%s" % (u["update_id"], c.get("id", ""), c.get("type", ""), nombre.replace("\t", " ")))
+    break' 2>/dev/null)
+		case "$datos" in
+			ERROR*)
+				echo "    Telegram dice: ${datos#ERROR?}"
+				echo "    (Si el bot tiene un webhook o hay otro programa usando este token, no puedo leer los mensajes.)"
+				break
+				;;
+			?*)
+				IFS=$'\t' read -r ultimo chat tipo nombre <<< "$datos"
+				echo "    Mensaje recibido de: $nombre (chat $chat, tipo $tipo)"
+				leer -p "    Es tu chat? (s/n) [s]: " respuesta
+				case "${respuesta:-s}" in
+					s|S|si|SI|Si) ;;
+					*) chat="" ;;
+				esac
+				;;
+		esac
+	done
+
+	while ! id_valido "$chat"; do
+		preguntar chat "    ID del chat (un numero; te lo da tambien @userinfobot)" "$ID"
+	done
+	ID="$chat"
+	# El mensaje de prueba ya esta leido: que el bot no lo conteste al arrancar.
+	[ "${ultimo:-0}" -gt 0 ] && echo "$((ultimo + 1))" > offset
+
+	# 3. OpenWebIF
+	echo
+	echo "3/5 OPENWEBIF (la web del deco; el bot la usa para encender, apagar y ver streams)"
+	while :; do
+		preguntar WEBIF "    Direccion" "$WEBIF"
+		WEBIF_AUTH=()
+		[ -n "$WEBIF_USUARIO" ] && WEBIF_AUTH=(-u "$WEBIF_USUARIO:$WEBIF_CLAVE")
+		codigo=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "${WEBIF_AUTH[@]}" "$WEBIF/api/statusinfo")
+		case "$codigo" in
+			200)
+				echo "    Correcto: OpenWebIF responde."
+				break
+				;;
+			401)
+				echo "    OpenWebIF pide usuario y contrasena."
+				preguntar WEBIF_USUARIO "    Usuario" "${WEBIF_USUARIO:-root}"
+				leer -s -p "    Contrasena (no se ve al escribir): " WEBIF_CLAVE
+				echo
+				;;
+			*)
+				echo "    No hay respuesta de OpenWebIF en $WEBIF (codigo ${codigo:-ninguno})."
+				leer -p "    Guardar de todas formas? (s/n) [n]: " respuesta
+				case "$respuesta" in s|S|si|SI|Si) break ;; esac
+				;;
+		esac
+	done
+
+	# 4. Lista de canales
+	echo
+	echo "4/5 LISTA DE CANALES DE GHOSTREAMY (lista.m3u8)"
+	echo "    Se descarga desde la web de ghostreamy y se deja en el deco."
+	preguntar GHOSTLIST "    Ruta del fichero" "$GHOSTLIST"
+	if [ -f "$GHOSTLIST" ]; then
+		n_canales=$(grep -cE '^https?://' "$GHOSTLIST" 2>/dev/null)
+		detectado=$(detectar_puerto_ghost "$GHOSTLIST")
+		echo "    Encontrada: $n_canales URLs${detectado:+, puerto de ghostreamy $detectado}."
+	else
+		echo "    Todavia no existe. El bot arrancara sin canales: cuando la tengas,"
+		echo "    copiala ahi y envia /actualizar_canales al bot."
+	fi
+
+	# 5. Puertos de ghostreamy
+	echo
+	echo "5/5 PUERTOS DE GHOSTREAMY"
+	echo "    Interno: donde escucha ghostreamy en el deco. 'auto' lo saca de la lista."
+	preguntar GHOST_PORT_INT "    Puerto interno" "$GHOST_PORT_INT"
+	while [ "$GHOST_PORT_INT" != "auto" ] && ! es_puerto "$GHOST_PORT_INT"; do
+		preguntar GHOST_PORT_INT "    Tiene que ser un numero de 1 a 65535, o auto" "auto"
+	done
+	echo "    Externo: el que tu router abre hacia Internet y lleva al interno."
+	echo "    Solo lo usa /canal X para darte la URL de fuera de casa. Intro: el mismo que el interno."
+	preguntar GHOST_PORT_EXT "    Puerto externo" "$GHOST_PORT_EXT"
+	while [ -n "$GHOST_PORT_EXT" ] && ! es_puerto "$GHOST_PORT_EXT"; do
+		preguntar GHOST_PORT_EXT "    Tiene que ser un numero de 1 a 65535 (o Intro)" ""
+	done
+
+	if ! guardar_conf; then
+		echo
+		echo "No he podido escribir $(pwd)/$CONF."
+		return 1
+	fi
+
+	echo
+	echo "Guardado en $(pwd)/$CONF:"
+	echo "    bot @$nombre_bot | chat $ID | OpenWebIF $WEBIF${WEBIF_USUARIO:+ (usuario $WEBIF_USUARIO)}"
+	echo "    lista $GHOSTLIST | puertos ghostreamy ${GHOST_PORT_INT}->${GHOST_PORT_EXT:-(el mismo)}"
+	echo
+	echo "El bot arranca ahora en esta terminal (Ctrl+C lo para). Para que arranque"
+	echo "solo con el deco, mira la guia de instalacion."
+	echo
+	return 0
+}
+
+conf_completa() { token_valido "$TOKEN" && id_valido "$ID"; }
+
+leer_conf
+
+if [ "$1" = "--configurar" ] || ! conf_completa; then
+	if [ -t 0 ]; then
+		configuracion_inicial || exit 1
+		leer_conf
+	fi
+fi
 
 # ============================================================
 
@@ -146,7 +494,7 @@ registrar() {
 }
 
 # Recorta un texto a una sola linea de como mucho 200 caracteres, para
-# que las respuestas de curl/wget no revienten el log.
+# que las respuestas de curl no revienten el log.
 resumir() {
 	printf '%s' "$1" | tr '\n\t' '  ' | cut -c1-200
 }
@@ -188,53 +536,77 @@ OFFSET=${OFFSET:-0}
 
 registrar "Offset de Telegram al arrancar: $OFFSET (fichero ./$OFFSET_FILE)"
 
-# ===================== CONFIGURA ESTO =====================
+# ===================== CONFIGURACION EN USO =====================
 
-# LEER ANTES DE EDITAR ESTE BLOQUE: inyectar_config() (mas abajo) localiza estas
-# variables por expresion regular "^NOMBRE=" y las reescribe cuando el bot se
-# actualiza a si mismo. Por eso:
-#   - cada asignacion va en su propia linea, desde la columna 0 y sin espacios
-#     antes del "=";
-#   - solo se trasplantan TOKEN, ID, WEBIF, GHOSTLIST, GHOST_PORT_INT,
-#     GHOST_PORT_EXT, STREAMPORT_NATIVO y WEBIFAUTH; cualquier OTRA variable que
-#     se personalice aqui volvera a su valor de fabrica en la proxima
-#     actualizacion;
-#   - el valor se escribe entre comillas dobles y sin escapar: evitar los
-#     caracteres $ " ` y \ (sobre todo en la contrasena de WEBIFAUTH);
-#   - no anadir ninguna otra linea que empiece por "# WEBIFAUTH=" antes de la
-#     de ejemplo: el trasplante insertaria la activa justo debajo de la primera.
-# TOKEN: el que da @BotFather (nunca se escribe en el log).
-# ID: id numerico del unico chat autorizado (@userinfobot).
-TOKEN=""     # se pide a @BotFather
-ID=""                 # se obtiene, p.ej., con @userinfobot
+# Los valores ya vienen de botikor.conf (ver "CONFIGURACION: botikor.conf" al
+# principio del script). Aqui solo se validan, se completan y se calculan los
+# derivados. Para cambiar algo se edita botikor.conf, no este bloque.
 
-WEBIF="http://127.0.0.1"
+if [ -n "$CONF_AVISOS" ]; then
+	registrar "ATENCION: en $CONF hay lineas que no se entienden y se ignoran:$CONF_AVISOS"
+fi
 
-# Si OpenWebIF pide usuario y contraseña (solo se usa aquí para encender/apagar):
-# WEBIFAUTH="-u usuario:password"
+if ! conf_completa; then
+	if [ -f "$CONF" ]; then
+		registrar "ERROR: en $(pwd)/$CONF falta el TOKEN o el ID, o no son validos. Sin ellos el bot no puede funcionar. Para arreglarlo, lanza a mano desde una terminal: $SCRIPT_PATH --configurar"
+	else
+		registrar "ERROR: no existe $(pwd)/$CONF. Para crearlo, lanza a mano desde una terminal: $SCRIPT_PATH"
+	fi
+	exit 1
+fi
 
-# Ghostreamy: puerto interno real y puerto externo publicado en el router
-GHOSTLIST="/home/root/botikor/lista.m3u8"
-# GHOST_PORT_INT: puerto donde ESCUCHA ghostreamy dentro del deco (3138 por
-# defecto). Debe coincidir con el puerto de las URLs de lista.m3u8; es el que
-# vigilan la deteccion de streams y parar_stream.
-# GHOST_PORT_EXT: puerto que el router abre hacia Internet y redirige al INT
-# (aqui 3838 -> 3138). Solo lo usa "canal X", que cambia "IP-local:INT" por
-# "IP-publica:EXT". Depende de cada red: si el router publica el mismo puerto,
-# EXT = INT.
-GHOST_PORT_INT=3138
-GHOST_PORT_EXT=3838
+# Lleva el token: que solo lo pueda leer root aunque se haya creado a mano.
+chmod 600 "$CONF" 2>/dev/null
 
-# Puerto nativo de streaming de Enigma2 (ya no expuesto a WAN, pero se
-# sigue vigilando en local: ahí es donde aparecen tanto los clientes
-# "tradicionales" directos como, en loopback, el propio ghostreamy
-# tirando del canal para sus clientes).
-STREAMPORT_NATIVO=8001
+if ! es_puerto "$STREAMPORT_NATIVO"; then
+	registrar "ATENCION: STREAMPORT_NATIVO='$STREAMPORT_NATIVO' no es un puerto valido; se usa 8001"
+	STREAMPORT_NATIVO=8001
+fi
 
-# Puertos en hexadecimal, tal como aparecen en /proc/net/tcp. Se calculan
-# una sola vez aqui (printf -v no lanza ningun proceso).
+# Usuario y contrasena de OpenWebIF como argumentos de curl. Es un array para
+# que la contrasena llegue entera aunque lleve espacios o simbolos.
+WEBIF_AUTH=()
+[ -n "$WEBIF_USUARIO" ] && WEBIF_AUTH=(-u "$WEBIF_USUARIO:$WEBIF_CLAVE")
+
+# Lo que dice botikor.conf de los puertos de ghostreamy ("auto" o numero; el
+# externo, vacio o numero). GHOST_PORT_INT y GHOST_PORT_EXT son los que se usan.
+GHOST_PORT_CONF="$GHOST_PORT_INT"
+GHOST_PORT_EXT_CONF="$GHOST_PORT_EXT"
+
+# Fija GHOST_PORT_INT (si es "auto", el puerto mas repetido en las URLs de
+# GHOSTLIST; si no se puede, 3138), GHOST_PORT_EXT (vacio: igual al interno) y
+# PUERTO_HEX_GHOST. Se llama al arrancar y tras "actualizar_canales", porque
+# una lista nueva puede traer otro puerto.
+fijar_puerto_ghost() {
+	local detectado origen
+	if es_puerto "$GHOST_PORT_CONF"; then
+		GHOST_PORT_INT="$GHOST_PORT_CONF"
+		origen="fijado en $CONF"
+	else
+		[ "$GHOST_PORT_CONF" != "auto" ] && registrar "ATENCION: GHOST_PORT_INT='$GHOST_PORT_CONF' no es un puerto ni 'auto'; se detecta de la lista"
+		detectado=$(detectar_puerto_ghost "$GHOSTLIST")
+		if es_puerto "$detectado"; then
+			GHOST_PORT_INT="$detectado"
+			origen="detectado en las URLs de $GHOSTLIST"
+		else
+			GHOST_PORT_INT=3138
+			origen="no se ha podido detectar en $GHOSTLIST, se usa el de fabrica"
+		fi
+	fi
+	if es_puerto "$GHOST_PORT_EXT_CONF"; then
+		GHOST_PORT_EXT="$GHOST_PORT_EXT_CONF"
+	else
+		[ -n "$GHOST_PORT_EXT_CONF" ] && registrar "ATENCION: GHOST_PORT_EXT='$GHOST_PORT_EXT_CONF' no es un puerto valido; se usa el interno"
+		GHOST_PORT_EXT="$GHOST_PORT_INT"
+	fi
+	printf -v PUERTO_HEX_GHOST '%04X' "$GHOST_PORT_INT"
+	registrar "Puerto de ghostreamy: $GHOST_PORT_INT ($origen) | externo $GHOST_PORT_EXT"
+}
+
+# Puertos en hexadecimal, tal como aparecen en /proc/net/tcp (printf -v no
+# lanza ningun proceso). El de ghostreamy lo calcula fijar_puerto_ghost.
 printf -v PUERTO_HEX_NATIVO '%04X' "$STREAMPORT_NATIVO"
-printf -v PUERTO_HEX_GHOST '%04X' "$GHOST_PORT_INT"
+fijar_puerto_ghost
 
 # Conexiones a ghostreamy que NO tienen un stream detras (alguien navegando
 # por su web, bajando la guia o los picons): no se anuncian. Mientras una
@@ -265,11 +637,7 @@ myip=""
 myip_ts=0
 IP_TTL=300
 
-if [ -z "$TOKEN" ] || [ -z "$ID" ]; then
-	registrar "ATENCION: TOKEN y/o ID vacios. El bot no va a poder hablar con Telegram"
-else
-	registrar "Configuracion: TOKEN presente (${#TOKEN} caracteres, no se registra) | ID $ID | WEBIF $WEBIF | lista $GHOSTLIST | puertos ghostreamy $GHOST_PORT_INT->$GHOST_PORT_EXT | puerto nativo $STREAMPORT_NATIVO"
-fi
+registrar "Configuracion ($(pwd)/$CONF): TOKEN presente (${#TOKEN} caracteres, no se registra) | ID $ID | WEBIF $WEBIF${WEBIF_USUARIO:+ (usuario $WEBIF_USUARIO)} | lista $GHOSTLIST | puertos ghostreamy $GHOST_PORT_INT->$GHOST_PORT_EXT | puerto nativo $STREAMPORT_NATIVO"
 
 # ============================================================
 
@@ -370,13 +738,13 @@ powerstate() {
 
 	registrar "Enviando a OpenWebIF powerstate=$estado ($descripcion)"
 
-	respuesta_ws=$(wget -q -O - --timeout 5 $WEBIFAUTH "$WEBIF/api/powerstate?newstate=$estado" 2>&1)
+	respuesta_ws=$(curl -s -S -f --max-time 5 "${WEBIF_AUTH[@]}" "$WEBIF/api/powerstate?newstate=$estado" 2>&1)
 	rc_ws=$?
 
 	if [ "$rc_ws" -eq 0 ]; then
 		registrar "OpenWebIF powerstate=$estado OK -> $(resumir "$respuesta_ws")"
 	else
-		registrar "ATENCION: OpenWebIF powerstate=$estado ha fallado (wget rc=$rc_ws) -> $(resumir "$respuesta_ws")"
+		registrar "ATENCION: OpenWebIF powerstate=$estado ha fallado (curl rc=$rc_ws) -> $(resumir "$respuesta_ws")"
 	fi
 
 	return $rc_ws
@@ -1091,98 +1459,15 @@ cargar_canales() {
 
 # ============================================================
 
-# TRASPLANTE DE LA CONFIGURACION AL SCRIPT DESCARGADO
-#
-# El botikor.sh publicado en GitHub viene con TOKEN e ID vacios (es la
-# copia "de fabrica"). Si se copiara tal cual encima del script
-# instalado, el bot se quedaria mudo: sin token no puede ni avisar de
-# que se ha quedado mudo. Asi que antes de instalarlo se le escriben
-# los valores de ESTA instalacion.
-#
-# TOKEN e ID son obligatorios: si estan puestos aqui y no se consiguen
-# escribir en el fichero nuevo, se aborta la actualizacion y se deja el
-# script viejo funcionando. El resto (WEBIF, rutas, puertos, WEBIFAUTH)
-# se trasplanta tambien si existe la linea correspondiente.
-
-# ============================================================
-
-# Limitaciones del trasplante:
-#   - Solo las 8 variables de la lista "valores" (ver limitaciones conocidas en
-#     ARQUITECTURA.md). REPO_GITHUB NO se trasplanta: lo trae el script nuevo.
-#     Por eso, para mudar el sitio de las actualizaciones hay que publicar una
-#     ultima version "puente" en el sitio antiguo.
-#   - El valor se escribe entre comillas dobles sin escapar nada.
-#   - Si TOKEN o ID estan puestos aqui y no se encuentra donde escribirlos en el
-#     fichero nuevo, la actualizacion se aborta y sigue el script viejo.
-inyectar_config() {
-	python3 - "$1" "$TOKEN" "$ID" "$WEBIF" "$GHOSTLIST" "$GHOST_PORT_INT" "$GHOST_PORT_EXT" "$STREAMPORT_NATIVO" "$WEBIFAUTH" <<-'PYEOF'
-		import re, sys
-
-		ruta = sys.argv[1]
-		valores = {
-		    "TOKEN": sys.argv[2],
-		    "ID": sys.argv[3],
-		    "WEBIF": sys.argv[4],
-		    "GHOSTLIST": sys.argv[5],
-		    "GHOST_PORT_INT": sys.argv[6],
-		    "GHOST_PORT_EXT": sys.argv[7],
-		    "STREAMPORT_NATIVO": sys.argv[8],
-		    "WEBIFAUTH": sys.argv[9],
-		}
-
-		# Solo se exige trasplantar lo que aqui esta puesto.
-		obligatorias = [c for c in ("TOKEN", "ID") if valores[c]]
-
-		try:
-		    with open(ruta, encoding="utf-8") as f:
-		        lineas = f.read().split("\n")
-		except Exception as e:
-		    print("no se puede leer el fichero: %s" % e)
-		    sys.exit(1)
-
-		escritas = set()
-		for i, linea in enumerate(lineas):
-		    for clave, valor in valores.items():
-		        if clave in escritas or not valor:
-		            continue
-		        if re.match(r"^%s=" % clave, linea):
-		            # Se respeta el comentario que hubiera al final.
-		            com = re.search(r"(\s+#.*)$", linea)
-		            lineas[i] = '%s="%s"%s' % (clave, valor, com.group(1) if com else "")
-		            escritas.add(clave)
-		            break
-
-		# WEBIFAUTH puede venir solo como ejemplo comentado: en ese caso
-		# se inserta una linea activa justo debajo.
-		if valores["WEBIFAUTH"] and "WEBIFAUTH" not in escritas:
-		    for i, linea in enumerate(lineas):
-		        if re.match(r"^#\s*WEBIFAUTH=", linea):
-		            lineas.insert(i + 1, 'WEBIFAUTH="%s"' % valores["WEBIFAUTH"])
-		            escritas.add("WEBIFAUTH")
-		            break
-
-		faltan = [c for c in obligatorias if c not in escritas]
-		if faltan:
-		    print("no se ha encontrado donde escribir: %s" % ", ".join(faltan))
-		    sys.exit(1)
-
-		print("trasplantado: %s" % ", ".join(sorted(escritas)))
-		with open(ruta, "w", encoding="utf-8") as f:
-		    f.write("\n".join(lineas))
-		PYEOF
-}
-
-# ============================================================
-
 # INSTALACION DE UN SCRIPT YA DESCARGADO (comun a "actualizar_botikor" y
 # "downgrade X")
 #
 # $1 = fichero descargado, $2 = version que contiene, $3 = verbo para el
-# aviso de Telegram ("Actualizando" / "Cambiando"). Valida sintaxis, le
-# trasplanta la configuracion, guarda copia de seguridad de la version
-# actual en SCRIPT_PATH.anterior, instala y relanza con exec. Si algo falla
-# no se toca el script instalado: borra el fichero descargado y devuelve 1.
-# Si todo va bien no vuelve (exec).
+# aviso de Telegram ("Actualizando" / "Cambiando"). Valida sintaxis, guarda
+# copia de seguridad de la version actual en SCRIPT_PATH.anterior, instala y
+# relanza con exec. La configuracion no se toca: vive en botikor.conf. Si
+# algo falla no se toca el script instalado: borra el fichero descargado y
+# devuelve 1. Si todo va bien no vuelve (exec).
 
 # ============================================================
 
@@ -1198,32 +1483,20 @@ instalar_script_descargado() {
 		return 1
 	fi
 
-	# Sin esto el script nuevo llegaria con TOKEN e ID vacios.
-	if ! salida_config=$(inyectar_config "$tmp" 2>&1); then
-		registrar "INSTALACION ABORTADA: $(resumir "$salida_config")"
-		telegram "No he podido pasarle el token y el ID al script de la v$version_remota, asi que no lo instalo. Sigo en v$VERSION"
-		rm -f "$tmp"
-		return 1
-	fi
-
-	registrar "Configuracion trasplantada al script nuevo: $(resumir "$salida_config")"
-
-	# Segunda validacion: el trasplante ha reescrito lineas del fichero.
-	if ! bash -n "$tmp" 2>/dev/null; then
-		registrar "INSTALACION ABORTADA: el script ya no pasa bash -n tras trasplantar la configuracion"
-		telegram "El script de la v$version_remota ha quedado con errores de sintaxis tras meterle la configuración, no lo instalo"
-		rm -f "$tmp"
-		return 1
-	fi
-
 	if cp "$SCRIPT_PATH" "$SCRIPT_PATH.anterior" 2>/dev/null; then
 		registrar "Copia de seguridad de la v$VERSION en $SCRIPT_PATH.anterior"
 	else
 		registrar "ATENCION: no se ha podido guardar copia de seguridad de $SCRIPT_PATH"
 	fi
 
-	cp "$tmp" "$SCRIPT_PATH"
-	chmod +x "$SCRIPT_PATH"
+	# Copia a un temporal junto al destino y mv: el script instalado nunca
+	# queda a medio escribir.
+	if ! cp "$tmp" "$SCRIPT_PATH.nuevo" || ! chmod +x "$SCRIPT_PATH.nuevo" || ! mv "$SCRIPT_PATH.nuevo" "$SCRIPT_PATH"; then
+		registrar "INSTALACION ABORTADA: no se puede escribir $SCRIPT_PATH"
+		telegram "No he podido instalar la v$version_remota (no se puede escribir $SCRIPT_PATH). Sigo en v$VERSION"
+		rm -f "$tmp" "$SCRIPT_PATH.nuevo"
+		return 1
+	fi
 	rm -f "$tmp"
 
 	registrar "Instalada v$version_remota en $SCRIPT_PATH. Relanzando con exec (mismo PID $$)"
@@ -1356,7 +1629,7 @@ actualizar_botikor() {
 # escribirse 4.0.0, v4.0.0 o 400; si sin puntos encaja con varias (3.1.11 y
 # 31.1.1), se pide que se escriba con puntos. Si existe, se descarga y se
 # instala igual que una actualizacion (huella SHA-256, validacion de
-# sintaxis, trasplante de TOKEN/ID/config, copia en .anterior, exec), sea
+# sintaxis, copia en .anterior, exec), sea
 # mas vieja o mas nueva que la instalada.
 #
 # Como red de seguridad, el script descargado debe declarar la VERSION
@@ -1698,6 +1971,10 @@ then
 					registrar "Comando 'actualizar_canales'"
 
 					if cargar_canales; then
+						# Con GHOST_PORT_INT=auto, la lista nueva manda.
+						puerto_antes="$GHOST_PORT_INT"
+						fijar_puerto_ghost
+						[ "$GHOST_PORT_INT" != "$puerto_antes" ] && registrar "ATENCION: el puerto de ghostreamy cambia de $puerto_antes a $GHOST_PORT_INT"
 						telegram "Lista de canales recargada desde $GHOSTLIST"
 					else
 						telegram "No se ha podido leer $GHOSTLIST"
@@ -2250,7 +2527,7 @@ if [ -n "$VIVOS$PEND$ESTADO" ]; then
 	if [ -n "$NUEVOS_CONF" ]; then
 
 		# Una sola consulta a OpenWebIF para todos los confirmados de este ciclo.
-		json_estado=$(curl -s --max-time 5 $WEBIFAUTH "$WEBIF/api/statusinfo")
+		json_estado=$(curl -s --max-time 5 "${WEBIF_AUTH[@]}" "$WEBIF/api/statusinfo")
 		resueltos=$(resolver_canales "$json_estado" "$ESTADO" "$NUEVOS_CONF${RESERVAS:+$NL$RESERVAS}" 2>/dev/null)
 
 		if [ -z "$resueltos" ]; then

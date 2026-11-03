@@ -25,17 +25,19 @@ No necesita servidor propio ni abrir puertos para Telegram: el bot **pregunta** 
 
 ## Estructura del script (se lee de arriba abajo)
 
-1. **Cabecera y configuración**: `VERSION`, `REPO_GITHUB`, `TOKEN`, `ID`, puertos.
-2. **Arranque**: recorte del log (`recortar_log`), redirección de la salida al log, banner.
-3. **Funciones de apoyo** (se definen antes de usarse):
+1. **Cabecera**: `VERSION`, `REPO_GITHUB`, directorio de trabajo.
+2. **Configuración** (ver «Configuración» más abajo): valores por defecto, `leer_conf`, `guardar_conf`, validaciones, `detectar_puerto_ghost`, `configuracion_inicial`. Corre antes de redirigir la salida al log, porque la configuración inicial habla con la persona por la terminal.
+3. **Arranque**: recorte del log (`recortar_log`), redirección de la salida al log, banner.
+4. **Funciones de apoyo** (se definen antes de usarse):
    - log y salida: `registrar`, `resumir`, `telegram`, `escapar_html`, `telegram_html`, `telegram_documento`
    - acciones: `powerstate`, `parar_streams`, `obtener_ip_publica`
    - estado de streams: `agregar_linea`, `contar_lineas`, `clave_en`, `duracion_txt`, `lista_activos`, `decodificar_conexiones`, `resolver_canales`
    - canales: `cargar_canales`
-   - actualizaciones: `inyectar_config`, `instalar_script_descargado`, `descargar_verificado`, `version_de`, `actualizar_botikor`, `downgrade_botikor`
+   - configuración en uso: comprobación de `TOKEN`/`ID` (sin ellos se cierra), `WEBIF_AUTH`, `fijar_puerto_ghost`
+   - actualizaciones: `instalar_script_descargado`, `descargar_verificado`, `version_de`, `actualizar_botikor`, `downgrade_botikor`
    - hora: `sincronizar_hora`
-4. **Secuencia de arranque**: `cargar_canales`, `sincronizar_hora`, aviso de «iniciado», IP pública.
-5. **Bucle principal** (cada ~5 s): sondeo de Telegram y despacho de comandos, detección de grabaciones, detección de streams, latido, `sleep 5`.
+5. **Secuencia de arranque**: `cargar_canales`, `sincronizar_hora`, aviso de «iniciado», IP pública.
+6. **Bucle principal** (cada ~5 s): sondeo de Telegram y despacho de comandos, detección de grabaciones, detección de streams, latido, `sleep 5`.
 
 El bucle es secuencial y de un solo hilo a propósito: un comando lento (`parar_stream` tarda hasta ~10 s) retrasa la vigilancia ese rato, pero a cambio todo el estado son unas pocas variables de bash, sin carreras.
 
@@ -46,6 +48,7 @@ En el directorio de trabajo `/home/root/botikor` (el script hace `cd` a él):
 | Fichero | Contenido |
 |---|---|
 | `botikor.log` | Log. Solo se conservan los `MAX_ARRANQUES` últimos arranques. |
+| `botikor.conf` | La configuración de esta instalación (permisos 600; lleva el token). Ver «Configuración». |
 | `offset` | Id del siguiente mensaje de Telegram a pedir (sobrevive a reinicios). |
 | `lista.m3u8` | Lista de canales de ghostreamy (la prepara la persona). |
 | `canales.tsv` | La lista ya digerida: nombre, URL normal, URL transcodificada. |
@@ -64,10 +67,26 @@ Fuera de él:
 ## Requisitos del deco
 
 - **bash** (no vale ash: se usan `printf -v`, `${!var}`, `<<<`, `$'..'` y `for ((..))`).
-- curl con HTTPS; wget (el de busybox basta; lo usa `powerstate`).
+- curl con HTTPS.
 - python3 (solo biblioteca estándar).
 - awk, sed, grep, cut y tr (busybox vale; ojo: su awk **no** admite `%*d` en `printf`).
 - Permisos de root: `parar_stream` abre sockets AF_PACKET y raw, y `sincronizar_hora` cambia el reloj.
+
+## Configuración
+
+Cada instalación tiene su configuración en `botikor.conf`, en el directorio de trabajo, con permisos 600. El script no lleva ningún dato de nadie, así que se actualiza o se publica tal cual. `botikor.conf.ejemplo` explica cada clave.
+
+- **Formato:** una línea `CLAVE=valor`; se ignoran las vacías y las que empiezan por `#`. El valor es literal, sin comillas (si va entero entre comillas, se quitan). Se quitan los espacios de alrededor salvo en `WEBIF_CLAVE`, así que una contraseña puede llevar `$`, `"`, `` ` ``, `\` o espacios. El fichero **nunca se ejecuta**: `leer_conf` lo lee línea a línea y solo acepta las claves de `CLAVES_CONF`; las demás se anotan en el log.
+- **Claves:** `TOKEN` e `ID` (obligatorias), `WEBIF`, `WEBIF_USUARIO`, `WEBIF_CLAVE`, `GHOSTLIST`, `GHOST_PORT_INT` (`auto` = el puerto más repetido en las URLs de la lista; si no hay, 3138), `GHOST_PORT_EXT` (vacío = el interno) y `STREAMPORT_NATIVO`.
+- **Configuración inicial:** si falta el fichero (o el `TOKEN` o el `ID`) y el script se lanza a mano desde una terminal (`[ -t 0 ]`), `configuracion_inicial` hace cinco preguntas:
+  1. el token, que comprueba con `getMe`;
+  2. el chat: pide escribir al bot y lo lee con `getUpdates`, saltándose los mensajes pendientes para que no se ejecute un comando viejo;
+  3. OpenWebIF: lo prueba y, si responde 401, pide usuario y contraseña;
+  4. la lista de canales;
+  5. los puertos.
+
+  Después guarda el fichero. Se niega si ya hay otro BOTikor en marcha (se comería los mensajes) y se cancela con Ctrl+D. En un arranque sin terminal nunca pregunta: deja un `ERROR` en el log y se cierra. `botikor.sh --configurar` vuelve a preguntar, con los valores actuales por defecto.
+- **OpenWebIF con contraseña:** se pasa a curl como array (`WEBIF_AUTH`), para que la contraseña llegue entera.
 
 ## Comandos
 
@@ -127,7 +146,7 @@ Las releases solo se pueden descargar sin contraseña si el repositorio es públ
 Las funciones se prueban sueltas en cualquier Linux con bash y python3:
 
 1. Extraerlas con `sed -n '/^nombre() {/,/^}/p' botikor.sh`.
-2. Definir stubs de `registrar()` y `telegram()` que impriman, y de `curl()`/`wget()` que devuelvan un JSON de prueba.
+2. Definir stubs de `registrar()` y `telegram()` que impriman, y de `curl()` que devuelva un JSON de prueba.
 3. Hacer `source`.
 
 Para el bucle de streams, simular `VIVOS` y ejecutar ciclo a ciclo el bloque entre «Contabilidad barata» y «Latido cada» (así se verificó la 3.1.13). Para un `case` del despachador, extraer el bloque con `awk` desde la etiqueta hasta su `;;` y envolverlo en un `case` de prueba . Siempre `bash -n` antes de publicar.
@@ -139,15 +158,13 @@ Para el bucle de streams, simular `VIVOS` y ejecutar ciclo a ciclo el bloque ent
 3. **Grabaciones**: solo se mira el `*.ts` más reciente de `/hdd/movie` y solo se avisa del inicio. Si dos grabaciones empiezan en el mismo ciclo, solo se anuncia una. La carpeta y los `cut -c 28-` están fijados en el código.
 4. `canal X` necesita la IP pública (ipinfo.io) y que el router tenga abierto `GHOST_PORT_EXT`; no sirve detrás de CG-NAT. La reescritura de la URL solo reconoce hosts numéricos (`[0-9.]+`). Es intencionado: el bot comparte la IP pública (variable) y no un nombre DDNS que apunte siempre al dueño.
 5. **Las actualizaciones se ejecutan como root.** Van por HTTPS (también las redirecciones) y se comprueba la huella SHA-256, que se publica junto al script. Eso protege del camino y de las descargas corruptas, pero no de quien entre en la cuenta de GitHub que publica: la cuenta debe tener verificación en dos pasos. No hay firma criptográfica.
-6. La configuración vive dentro del propio script. Al actualizar solo se trasplantan las variables que lista `inyectar_config()` (`TOKEN`, `ID`, `WEBIF`, `GHOSTLIST`, `GHOST_PORT_INT`, `GHOST_PORT_EXT`, `STREAMPORT_NATIVO` y `WEBIFAUTH`). `REPO_GITHUB` no: lo trae el script nuevo.
+6. La configuración se lee al arrancar: un cambio en `botikor.conf` no cuenta hasta reiniciar el bot. `GHOST_PORT_INT=auto` se vuelve a detectar con `actualizar_canales`.
 7. Un único chat autorizado (`ID`).
 8. Latencia: un comando se atiende en el siguiente ciclo (hasta ~5 s) y un stream se anuncia tras verlo dos ciclos seguidos (~10 s).
 9. `zap` no puede confirmar que el deco haya cambiado de canal.
 
 ## Ideas pendientes (por orden de utilidad)
 
-- Configuración en un fichero aparte (`botikor.conf`) en vez de dentro del script: desaparecería `inyectar_config()`.
-- Detectar `GHOST_PORT_INT` a partir de las URLs de `lista.m3u8`.
 - Carpeta de grabaciones configurable (y `basename` en vez de `cut -c 28-`).
 - Que `actualizar_canales` descargue y reescriba la lista desde ghostreamy.
 - Comando de diagnóstico (`/estado`): versión, tiempo en marcha, OpenWebIF y ghostreamy alcanzables, canales cargados, IP pública.
