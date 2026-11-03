@@ -274,10 +274,12 @@ configuracion_inicial() {
 	echo "    Te lo da @BotFather en Telegram al crear el bot (/newbot)."
 	while :; do
 		if [ -n "$TOKEN" ]; then
-			leer -p "    Token [Intro = mantener el actual, ${TOKEN%%:*}:...]: " tok
+			leer -s -p "    Token (no se ve al escribirlo) [Intro = mantener el actual, ${TOKEN%%:*}:...]: " tok
+			echo
 			tok="${tok:-$TOKEN}"
 		else
-			leer -p "    Token: " tok
+			leer -s -p "    Token (no se ve al escribirlo; pegalo y pulsa Intro): " tok
+			echo
 		fi
 		tok="${tok//[[:space:]]/}"
 		if ! token_valido "$tok"; then
@@ -965,12 +967,20 @@ registrar "Configuracion ($(pwd)/$CONF): TOKEN presente (${#TOKEN} caracteres, n
 # telegram "texto": manda un mensaje de texto plano a $ID (puede ser de varias
 # lineas). Si Telegram no contesta ok se registra ATENCION, pero no se
 # reintenta ni se aborta nada. Para texto con formato ver telegram_html.
+# Quita la ruta de las direcciones web de un texto (deja esquema, host y
+# puerto). Las URLs de los canales de ghostreamy llevan el codigo de acceso del
+# usuario, y lo que se anota en el log no debe llevarlo (el log se envia con
+# "log" y se puede compartir para pedir ayuda).
+ocultar_rutas() {
+	sed -E 's#(https?://[^/[:space:]]+)/[^[:space:]]*#\1/...#g'
+}
+
 telegram() {
 	respuesta_tg=$(curl -s --max-time 15 -X POST "$URL" -d "chat_id=$ID" --data-urlencode "text=$1" 2>&1)
 
 	# Solo la primera linea del mensaje, para que "lista" no vuelque los
 	# 200 canales en el log.
-	resumen_tg=$(printf '%s' "$1" | head -n 1 | cut -c1-120)
+	resumen_tg=$(printf '%s' "$1" | head -n 1 | ocultar_rutas | cut -c1-120)
 
 	if printf '%s' "$respuesta_tg" | grep -q '"ok":true'; then
 		registrar "Telegram OK -> $resumen_tg"
@@ -1000,7 +1010,7 @@ escapar_html() {
 telegram_html() {
 	respuesta_tg=$(curl -s --max-time 15 -X POST "$URL" -d "chat_id=$ID" -d "parse_mode=HTML" --data-urlencode "text=$1" 2>&1)
 
-	resumen_tg=$(printf '%s' "$1" | head -n 1 | cut -c1-120)
+	resumen_tg=$(printf '%s' "$1" | head -n 1 | ocultar_rutas | cut -c1-120)
 
 	if printf '%s' "$respuesta_tg" | grep -q '"ok":true'; then
 		registrar "Telegram OK (HTML) -> $resumen_tg"

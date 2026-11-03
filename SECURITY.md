@@ -15,7 +15,7 @@ Si encuentras una vulnerabilidad, **no abras una incidencia pública**. Usa el b
   - la versión.
 
   Si algo no cuadra, no instala nada.
-- **Los secretos no van al log.** El token del bot, la contraseña de OpenWebIF y la dirección de la lista de ghostreamy (que lleva el código del usuario) nunca se escriben en el log, que es lo que envía `/log`.
+- **Los secretos no van al log.** El token del bot y la contraseña de OpenWebIF nunca se escriben en el log, que es lo que envía `/log`. De las direcciones web (la de la lista de ghostreamy y los enlaces de `/canal`, que llevan el código del usuario) solo se anota el servidor y el puerto. El log sí lleva tu IP pública: tenlo en cuenta si lo compartes para pedir ayuda.
 - **La configuración, aparte y protegida.** Va en `botikor.conf` con permisos 600 (solo root) y el bot nunca la ejecuta: solo lee las claves que conoce. El script publicado no lleva datos de nadie.
 - **Solo conexiones de salida.** El bot pregunta a Telegram cada pocos segundos; no abre ningún puerto en el deco ni en el router.
 
