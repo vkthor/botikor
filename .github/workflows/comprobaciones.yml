@@ -1,0 +1,38 @@
+# Comprobaciones automaticas en cada cambio que se sube a GitHub.
+name: Comprobaciones
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  comprobaciones:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sintaxis de bash
+        run: |
+          for f in botikor.sh herramientas/*.sh; do
+            echo "bash -n $f"
+            bash -n "$f"
+          done
+
+      - name: Saltos de linea LF (sin CRLF)
+        run: |
+          if grep -rlI $'\r' --exclude-dir=.git .; then
+            echo "Estos ficheros tienen saltos de linea CRLF"
+            exit 1
+          fi
+
+      - name: El script publicado no lleva datos de nadie
+        run: |
+          grep -qE '^TOKEN=""$' botikor.sh
+          grep -qE '^ID=""$' botikor.sh
+          grep -qE '^VERSION="[0-9]+\.[0-9]+\.[0-9]+"' botikor.sh
+
+      - name: Informe completo de shellcheck (solo informativo)
+        run: shellcheck --version && shellcheck -f gcc botikor.sh herramientas/*.sh || true
+
+      - name: shellcheck (avisos y errores)
+        run: shellcheck -S warning botikor.sh herramientas/*.sh
