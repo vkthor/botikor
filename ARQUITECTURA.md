@@ -157,7 +157,7 @@ Los comandos son **una palabra** (con `_` si hace falta) porque Telegram solo co
 El bot pide 3 s de stream a ghostreamy por la URL local (`curl --max-time 3`). Para que eso cambie el canal del deco hacen falta **dos ajustes activados**; es un requisito de instalación que debe constar en la guía:
 
 1. En el **usuario de ghostreamy** que usa el bot: «Forzar zap antes de reproducir un canal».
-2. En el **propio deco**, en la configuración de OpenWebIF: «zap before streaming» (anotar aquí el texto exacto del ajuste cuando se compruebe).
+2. En el **propio deco**, en OpenWebIF: «Zap before streaming», que en la traducción española es «Saltar antes del Stream» (clave `zapbeforestream`). Está en la web de OpenWebIF, menú Extras → Configuración → «Configuración OpenWebif».
 
 Sin ellos, ghostreamy abre un stream aparte y el deco no se mueve (comprobado en un Octagon SF8008). El bot no puede confirmar el cambio. El corte por `--max-time` devuelve rc 28, que aquí es lo normal.
 

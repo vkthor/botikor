@@ -1,8 +1,16 @@
 #!/bin/bash
 # BOTikor - bot de Telegram para decodificadores Enigma2 con ghostreamy.
-# Autor: VkThor. Corre como root dentro del deco y lo maneja por Telegram.
-# Arquitectura, comandos, convenciones, limitaciones y como probarlo:
-# ARQUITECTURA.md.
+# https://github.com/vkthor/botikor
+#
+# Copyright (C) 2026 Victor Cruz (VkThor)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Este programa es software libre: puedes redistribuirlo y modificarlo bajo
+# los terminos de la Licencia Publica General GNU (GPL) version 3 o
+# posterior. Se distribuye SIN NINGUNA GARANTIA. Ver el fichero LICENSE.
+#
+# Corre como root dentro del deco y lo maneja por Telegram. Instalacion:
+# docs/INSTALACION.md. Arquitectura, comandos, convenciones, limitaciones y
+# como probarlo: ARQUITECTURA.md.
 # Requiere bash (no ash), curl, python3 y awk/sed/grep (busybox vale).
 # La configuracion de cada instalacion va aparte, en botikor.conf.
 

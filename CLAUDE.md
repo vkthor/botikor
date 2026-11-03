@@ -9,7 +9,7 @@ Responde siempre en español, directo y preciso. Autor: Víctor Cruz (VkThor). S
 - Todo es **beta**. La versión actual es la **1.0.0** (aún sin publicar).
 - La primera versión publicada en GitHub será la **1.0.0** (decidido por Víctor). No llevar changelog hasta entonces.
 - En el repositorio todo se llama **botikor** (script `botikor.sh`, directorio `/home/root/botikor`, log `botikor.log`). No añadir referencias a nombres antiguos del proyecto: lo relativo a versiones anteriores va en `CLAUDE.local.md`.
-- **Licencia: GPL-3.0** (decidida por Víctor). Falta añadir el fichero LICENSE y las cabeceras.
+- **Licencia: GPL-3.0** (decidida por Víctor), puesta como `GPL-3.0-or-later` en la cabecera del script.
 - Repositorio: `vkthor/botikor` en GitHub, **privado** hasta terminar la Fase 0 y revisar que no quede nada privado.
 
 ## Decisiones tomadas
@@ -26,10 +26,11 @@ Responde siempre en español, directo y preciso. Autor: Víctor Cruz (VkThor). S
 - **Instalación automática** (adelantada de la Fase 4 por decisión de Víctor). **Hecha y probada** (2026-11-03): al acabar la configuración inicial el script se copia a `/usr/script/botikor.sh`, crea y activa `/etc/init.d/botikor` y se arranca; `--instalar` lo repite. Ver ARQUITECTURA.md, «Instalación». Probado en el deco con `/etc`, `/usr/script` y `/var/run` simulados en `/tmp`.
 - **Lista desde ghostreamy. Hecha y probada** (2026-11-03): `GHOSTLIST_URL` (la «m3u URL» de ghostreamy → Listas, pedida siempre a 127.0.0.1), descarga en la configuración inicial y en `actualizar_canales`. `/lista` se parte en varios mensajes si no cabe (decidido en vez de limitar el número de canales). Mensajes a Telegram con `--data-urlencode` (antes un `+` llegaba como espacio). Ver ARQUITECTURA.md, «Lista de canales».
 - **`/estado` y carpeta de grabaciones (`GRABACIONES`). Hechos y probados** (2026-11-03) con un bot de prueba en el deco (Telegram falso; OpenWebIF y ghostreamy reales, solo lectura). `/estado` incluye OSCam (`OSCAM_LOG`, leído del log; ver ARQUITECTURA.md, «OSCam»). Con esto la Fase 2 está completa. Los nombres de grabación pasan por `nombre_grabacion` (en OpenSPA los ficheros llevan `_` en vez de espacios).
-- **Siguiente:** Fase 3, la documentación (README, guía de instalación con tutorial, FAQ, SECURITY.md, LICENSE GPL-3.0).
+- **Fase 3 — documentación. Hecha** (2026-11-03): `README.md`, `docs/INSTALACION.md` (tutorial), `docs/FAQ.md`, `SECURITY.md`, `LICENSE` (texto oficial GPL-3.0 de la API de licencias de GitHub) y aviso `GPL-3.0-or-later` en la cabecera de `botikor.sh`. «Saltar antes del Stream» está en OpenWebIF → Extras → Configuración → «Configuración OpenWebif» (confirmado por Víctor con captura).
+- **Fase 4 (pendiente):** activar en GitHub el aviso privado de vulnerabilidades (`SECURITY.md` lo menciona), shellcheck/CI, release v1.0.0, recrear el repositorio limpio antes de hacerlo público (opcional, por el commit viejo que GitHub pueda guardar), y después el paso de las instalaciones existentes (ver `CLAUDE.local.md`).
 - **Requisitos para el tutorial** (decididos con Víctor): un solo usuario de ghostreamy; «Forzar zap antes de reproducir un canal» en ese usuario y «zap before streaming» en OpenWebIF; la «m3u URL» se copia de ghostreamy → Listas y no se comparte (lleva el código del usuario). OSCam con `logfile` activado (por defecto `/tmp/oscam.log`; otra ruta → `OSCAM_LOG` en botikor.conf).
 - **Fase 2 — funciones:** hecha (ver más abajo).
-- **Fase 3 — documentación:** README, guía de instalación, FAQ, SECURITY.md, LICENSE (GPL-3.0). Requisitos de ghostreamy (los dos ajustes de zap, usuario dedicado, un cliente a la vez en la versión gratuita).
+- **Fase 3 — documentación:** hecha (ver más abajo).
 - **Fase 4 — repositorio:** estructura, shellcheck/CI, release v1.0, instalación con un solo comando.
 
 ## Hechos técnicos importantes (verificados en un deco real)
