@@ -99,7 +99,7 @@ No hay instalador aparte: la persona descarga `botikor.sh`, lo lanza una vez des
 
 Si se contesta que no, el bot sigue en primer plano en la terminal. `botikor.sh --instalar` repite solo este paso (exige que ya haya configuración). No se toca un `/etc/init.d/botikor` que no tenga la marca «Creado por BOTikor».
 
-El `start-stop-daemon` de busybox no tiene `--retry`, así que `stop` manda TERM, espera hasta 10 s y, si sigue vivo, manda KILL. `start` no lanza un segundo bot si el del fichero de PID sigue vivo.
+Para parar no se usa `--retry` de `start-stop-daemon` (el de busybox no lo anuncia en su ayuda, aunque en OpenSPA lo acepta): `stop` manda TERM, espera hasta 10 s y, si sigue vivo, manda KILL. `start` no lanza un segundo bot si el del fichero de PID sigue vivo.
 
 ## Lista de canales
 

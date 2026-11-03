@@ -516,8 +516,8 @@ conf_completa() { token_valido "$TOKEN" && id_valido "$ID"; }
 DESTINO_SCRIPT="/usr/script/botikor.sh"
 INIT_BOTIKOR="/etc/init.d/botikor"
 
-# Texto de $INIT_BOTIKOR. start-stop-daemon de busybox no tiene --retry: la
-# espera al parar se hace a mano.
+# Texto de $INIT_BOTIKOR. Para parar no se usa --retry de start-stop-daemon (el de
+# busybox no lo anuncia en su ayuda, aunque lo acepta): la espera se hace a mano.
 script_arranque() {
 	cat <<-EOF
 	#!/bin/sh
