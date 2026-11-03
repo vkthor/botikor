@@ -71,7 +71,9 @@ ultima=$("$GH" release list --exclude-drafts --limit 100 --json tagName --jq '.[
 
 if [ -n "$ultima" ]; then
 	mayor=$(printf '%s\n%s\n' "$ultima" "$version" | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1)
-	[ "$mayor" = "$version" ] && [ "$version" != "$ultima" ] || fallo "la version $version no es mayor que la ultima publicada ($ultima)"
+	if [ "$mayor" != "$version" ] || [ "$version" = "$ultima" ]; then
+		fallo "la version $version no es mayor que la ultima publicada ($ultima)"
+	fi
 fi
 
 # 4. Huella

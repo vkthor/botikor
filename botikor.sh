@@ -1527,9 +1527,10 @@ duracion_txt() {
 
 # lista_activos: deja en LISTA_ACTIVOS el texto con los streams de $ESTADO.
 lista_activos() {
-	local l_tipo l_ip l_puerto l_canal l_inicio
+	local l_tipo l_ip l_canal
 	LISTA_ACTIVOS="Streams activos:"
-	while IFS=$'\t' read -r l_tipo l_ip l_puerto l_canal l_inicio; do
+	# Campos: tipo, IP, puerto, canal, inicio (puerto e inicio no hacen falta aqui).
+	while IFS=$'\t' read -r l_tipo l_ip _ l_canal _; do
 		[ -n "$l_tipo" ] || continue
 		[ "$l_canal" = "-" ] && l_canal=""
 		LISTA_ACTIVOS="$LISTA_ACTIVOS$NL• $l_ip (vía $l_tipo)${l_canal:+ — $l_canal}"
@@ -2071,8 +2072,8 @@ Escríbela con puntos, por ejemplo: downgrade $(printf '%s\n' "$version_pedida" 
 # ============================================================
 
 segundos_encendido() {
-	local up resto
-	read -r up resto < /proc/uptime 2>/dev/null
+	local up
+	read -r up _ < /proc/uptime 2>/dev/null
 	printf '%s\n' "${up%%.*}"
 }
 
@@ -2208,7 +2209,7 @@ estado_oscam() {
 }
 
 enviar_estado() {
-	local ahora txt json estado_webif codigo_ghost n_can origen fecha_lista n_grab libre
+	local ahora txt json estado_webif codigo_ghost n_can origen fecha_lista n_grab libre f
 
 	ahora=$(segundos_encendido)
 	duracion_txt $(( ${ahora:-0} - ${INICIO_UPTIME:-0} ))
@@ -2266,7 +2267,10 @@ IP pública: ${myip:-no se ha podido consultar}"
 
 	# Grabaciones: carpeta, cuantas hay y espacio libre.
 	if [ -d "$GRABACIONES" ]; then
-		n_grab=$(ls "$GRABACIONES"/*.ts 2>/dev/null | grep -c .)
+		n_grab=0
+		for f in "$GRABACIONES"/*.ts; do
+			[ -e "$f" ] && n_grab=$((n_grab + 1))
+		done
 		libre=$(df -k "$GRABACIONES" 2>/dev/null | awk 'END { if (NF >= 4) printf "%.1f GB", $(NF-2) / 1048576 }')
 		txt="$txt
 Grabaciones: $n_grab en $GRABACIONES${libre:+ (libres $libre)}"
@@ -2921,7 +2925,7 @@ newlastfile=$(ultima_grabacion)
 if [ "$lastfile" = "$newlastfile" ]
 then
 
-	felicidades=1
+	: # nada nuevo
 
 else
 
