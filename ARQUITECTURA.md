@@ -26,7 +26,7 @@ No necesita servidor propio ni abrir puertos para Telegram: el bot **pregunta** 
 ## Estructura del script (se lee de arriba abajo)
 
 1. **Cabecera**: `VERSION`, `REPO_GITHUB`, directorio de trabajo.
-2. **Configuración** (ver «Configuración» más abajo): valores por defecto, `leer_conf`, `guardar_conf`, validaciones, `detectar_puerto_ghost`, `configuracion_inicial`. Corre antes de redirigir la salida al log, porque la configuración inicial habla con la persona por la terminal.
+2. **Configuración** (ver «Configuración» más abajo): valores por defecto, `leer_conf`, `guardar_conf`, validaciones, `detectar_puerto_ghost`, `configuracion_inicial` e instalación (`instalar_arranque`, `script_arranque`, `iniciar_instalado`). Corre antes de redirigir la salida al log, porque la configuración inicial habla con la persona por la terminal.
 3. **Arranque**: recorte del log (`recortar_log`), redirección de la salida al log, banner.
 4. **Funciones de apoyo** (se definen antes de usarse):
    - log y salida: `registrar`, `resumir`, `telegram`, `escapar_html`, `telegram_html`, `telegram_documento`
@@ -50,7 +50,7 @@ En el directorio de trabajo `/home/root/botikor` (el script hace `cd` a él):
 | `botikor.log` | Log. Solo se conservan los `MAX_ARRANQUES` últimos arranques. |
 | `botikor.conf` | La configuración de esta instalación (permisos 600; lleva el token). Ver «Configuración». |
 | `offset` | Id del siguiente mensaje de Telegram a pedir (sobrevive a reinicios). |
-| `lista.m3u8` | Lista de canales de ghostreamy (la prepara la persona). |
+| `lista.m3u8` | Lista de canales de ghostreamy: la descarga el bot de `GHOSTLIST_URL` o la copia la persona. La anterior queda en `lista.m3u8.anterior`. |
 | `canales.tsv` | La lista ya digerida: nombre, URL normal, URL transcodificada. |
 | `canalnombres`, `canalurls`, `canalurlstrans` | Las tres columnas de `canales.tsv`. La línea N de cada una es el canal N de `/lista`. |
 | `listagrabaciones` | Grabaciones ya conocidas (se rehace en cada arranque). |
@@ -62,7 +62,8 @@ Fuera de él:
 |---|---|
 | `SCRIPT_PATH` | El propio script (normalmente `/usr/script/botikor.sh`). |
 | `SCRIPT_PATH.anterior` | Copia de la versión previa (la deja cada actualización o downgrade). |
-| `/etc/init.d/botikor` | Arranque en cada boot (lo prepara la persona al instalar; ver la guía de instalación). |
+| `/etc/init.d/botikor` | Arranque en cada boot. Lo crea el propio script al instalarse (ver «Instalación») y lo activa con `update-rc.d` (S90/K10). |
+| `/var/run/botikor.pid` | PID del bot en marcha (lo usa `/etc/init.d/botikor`). |
 
 ## Requisitos del deco
 
@@ -77,7 +78,7 @@ Fuera de él:
 Cada instalación tiene su configuración en `botikor.conf`, en el directorio de trabajo, con permisos 600. El script no lleva ningún dato de nadie, así que se actualiza o se publica tal cual. `botikor.conf.ejemplo` explica cada clave.
 
 - **Formato:** una línea `CLAVE=valor`; se ignoran las vacías y las que empiezan por `#`. El valor es literal, sin comillas (si va entero entre comillas, se quitan). Se quitan los espacios de alrededor salvo en `WEBIF_CLAVE`, así que una contraseña puede llevar `$`, `"`, `` ` ``, `\` o espacios. El fichero **nunca se ejecuta**: `leer_conf` lo lee línea a línea y solo acepta las claves de `CLAVES_CONF`; las demás se anotan en el log.
-- **Claves:** `TOKEN` e `ID` (obligatorias), `WEBIF`, `WEBIF_USUARIO`, `WEBIF_CLAVE`, `GHOSTLIST`, `GHOST_PORT_INT` (`auto` = el puerto más repetido en las URLs de la lista; si no hay, 3138), `GHOST_PORT_EXT` (vacío = el interno) y `STREAMPORT_NATIVO`.
+- **Claves:** `TOKEN` e `ID` (obligatorias), `WEBIF`, `WEBIF_USUARIO`, `WEBIF_CLAVE`, `GHOSTLIST`, `GHOSTLIST_URL` (ver «Lista de canales»), `GHOST_PORT_INT` (`auto` = el puerto más repetido en las URLs de la lista; si no hay, 3138), `GHOST_PORT_EXT` (vacío = el interno), `STREAMPORT_NATIVO`, `OSCAM_LOG` (`/tmp/oscam.log`; vacío = no se mira) y `GRABACIONES` (carpeta donde graba el deco; `/hdd/movie`; la configuración inicial solo la pregunta si esa no existe).
 - **Configuración inicial:** si falta el fichero (o el `TOKEN` o el `ID`) y el script se lanza a mano desde una terminal (`[ -t 0 ]`), `configuracion_inicial` hace cinco preguntas:
   1. el token, que comprueba con `getMe`;
   2. el chat: pide escribir al bot y lo lee con `getUpdates`, saltándose los mensajes pendientes para que no se ejecute un comando viejo;
@@ -88,19 +89,59 @@ Cada instalación tiene su configuración en `botikor.conf`, en el directorio de
   Después guarda el fichero. Se niega si ya hay otro BOTikor en marcha (se comería los mensajes) y se cancela con Ctrl+D. En un arranque sin terminal nunca pregunta: deja un `ERROR` en el log y se cierra. `botikor.sh --configurar` vuelve a preguntar, con los valores actuales por defecto.
 - **OpenWebIF con contraseña:** se pasa a curl como array (`WEBIF_AUTH`), para que la contraseña llegue entera.
 
+## Instalación
+
+No hay instalador aparte: la persona descarga `botikor.sh`, lo lanza una vez desde una terminal (`bash botikor.sh`) y contesta las preguntas. Al acabar la configuración inicial, `instalar_arranque` ofrece dejarlo instalado:
+
+1. se copia a `/usr/script/botikor.sh`, si no se ejecuta ya desde ahí (la versión anterior queda en `.anterior`);
+2. crea `/etc/init.d/botikor` (texto en `script_arranque`) y lo activa con `update-rc.d botikor defaults 90 10`; si no hay `update-rc.d`, pone los enlaces de `/etc/rc?.d` a mano;
+3. lo arranca en segundo plano y explica cómo pararlo, reiniciarlo y ver el log.
+
+Si se contesta que no, el bot sigue en primer plano en la terminal. `botikor.sh --instalar` repite solo este paso (exige que ya haya configuración). No se toca un `/etc/init.d/botikor` que no tenga la marca «Creado por BOTikor».
+
+El `start-stop-daemon` de busybox no tiene `--retry`, así que `stop` manda TERM, espera hasta 10 s y, si sigue vivo, manda KILL. `start` no lanza un segundo bot si el del fichero de PID sigue vivo.
+
+## Lista de canales
+
+En la web de ghostreamy, menú **Listas**, cada lista del usuario tiene una «m3u URL» del tipo `http://IP:3138/s/<lista>/l/<código>/l.m3u8`. `<código>` es la clave de acceso del usuario de ghostreamy: la URL es secreta. Se muestra una vez por cada interfaz de red del deco, con IPs que pueden no ser alcanzables desde fuera.
+
+- La persona pega una de ellas en la configuración inicial. `url_lista_local` cambia el host por `127.0.0.1` y conserva el puerto y la ruta. Pedida así, ghostreamy devuelve las URLs de los canales también con `127.0.0.1`; `canal X` las convierte después a IP pública y puerto externo. Se guarda en `GHOSTLIST_URL`.
+- `descargar_lista` baja a un temporal, comprueba que sea una lista m3u con canales (`#EXTM3U`, al menos un `#EXTINF` y una URL) y solo entonces sustituye `GHOSTLIST`. Si falla, deja el motivo en `LISTA_ERROR` y no toca nada.
+- Al arrancar solo se descarga si falta el fichero, porque ghostreamy arranca después que el bot (S99 frente a S90). Para refrescarla está `actualizar_canales`.
+- La URL nunca va al log: se registra con `url_lista_segura`, que solo muestra el host y el puerto.
+- Comprobado en un deco real: la «m3u URL» de la lista usada, pedida por `127.0.0.1`, devuelve exactamente el mismo fichero que se había descargado a mano.
+
+## OSCam
+
+`/estado` dice si se está descifrando bien leyendo el log de OSCam (`OSCAM_LOG`, por defecto `/tmp/oscam.log`; vale para cualquier versión). `estado_oscam` lee el final del fichero (como mucho 400 KB) y mira los últimos `OSCAM_VENTANA` segundos (300):
+
+- **ECM:** «found» y «cacheN» son descifrados correctos; «not found», «timeout», «rejected»… son fallos.
+- **Lectores:** un «connect failed» o «disconnected» sin un ECM correcto posterior del mismo lector = lector caído.
+- **dvbapi:** «waiting for matching readers» = el deco espera un lector.
+
+Veredicto:
+
+- **«bien»:** sin fallos.
+- **«bien, con algún fallo»:** al menos el 80 % correcto, el último correcto y ningún lector caído.
+- **«PROBLEMAS»:** el resto.
+- **Sin ECM en la ventana** (canal en abierto, standby): no da alarma; solo dice cuándo fue el último, salvo que haya un lector caído.
+
+Nunca muestra las direcciones de los servidores. Requisito: que OSCam tenga `logfile` activado (en `[global]` de `oscam.conf`).
+
 ## Comandos
 
 Se aceptan con o sin `/` delante, en mayúsculas o minúsculas.
 
 | Comando | Qué hace |
 |---|---|
-| `lista` | Canales numerados. |
+| `lista` | Canales numerados. Si no caben en un mensaje de Telegram (4096 caracteres), van en varios, cortando entre líneas. |
 | `canal X` | URL pública del canal X (y la transcodificada). |
 | `zap X` | Cambia el deco al canal X (ver «Cómo funciona zap»). |
-| `actualizar_canales` | Vuelve a leer `lista.m3u8`. |
+| `actualizar_canales` | Con `GHOSTLIST_URL`, descarga la lista de ghostreamy (si falla, se queda la anterior); después la vuelve a leer. |
 | `actualizar_botikor` | Descarga la última release y, si es más nueva, la instala. |
 | `downgrade X` | Instala la versión X publicada (`1.0.0`, `v1.0.0` o `100`); sin X, las lista. |
 | `log` | Envía el log (últimos arranques) como `log.txt`. |
+| `estado` | Resumen de si todo funciona: versión, tiempo en marcha, si responden OpenWebIF (y qué canal se ve) y ghostreamy, cómo va OSCam (ver «OSCam»), canales y de dónde sale la lista, streams en curso, IP pública y grabaciones con el espacio libre. Solo consulta. |
 | `encender` | Saca al deco de standby. |
 | `suspender` | Standby normal (el bot sigue vivo). |
 | `apagar` | Apagado **profundo** (el bot deja de correr). |
@@ -155,7 +196,7 @@ Para el bucle de streams, simular `VIVOS` y ejecutar ciclo a ciclo el bloque ent
 
 1. **Canal de un stream de ghostreamy**: si varias conexiones salen de la misma IP, el canal se reparte por orden de llegada (la más reciente primero). Si alguien abre la web de ghostreamy y arranca un stream casi a la vez, podría atribuirse el canal a la conexión equivocada.
 2. `parar_stream` solo corta IPv4 (las conexiones IPv6 reales se omiten y se avisa).
-3. **Grabaciones**: solo se mira el `*.ts` más reciente de `/hdd/movie` y solo se avisa del inicio. Si dos grabaciones empiezan en el mismo ciclo, solo se anuncia una. La carpeta y los `cut -c 28-` están fijados en el código.
+3. **Grabaciones**: solo se mira el `*.ts` más reciente de `GRABACIONES` y solo se avisa del inicio. Si dos grabaciones empiezan en el mismo ciclo, solo se anuncia una. El nombre que se muestra sale de `nombre_grabacion` (sin la fecha `AAAAMMDD HHMM - `, sin `.ts` y con los `_` como espacios).
 4. `canal X` necesita la IP pública (ipinfo.io) y que el router tenga abierto `GHOST_PORT_EXT`; no sirve detrás de CG-NAT. La reescritura de la URL solo reconoce hosts numéricos (`[0-9.]+`). Es intencionado: el bot comparte la IP pública (variable) y no un nombre DDNS que apunte siempre al dueño.
 5. **Las actualizaciones se ejecutan como root.** Van por HTTPS (también las redirecciones) y se comprueba la huella SHA-256, que se publica junto al script. Eso protege del camino y de las descargas corruptas, pero no de quien entre en la cuenta de GitHub que publica: la cuenta debe tener verificación en dos pasos. No hay firma criptográfica.
 6. La configuración se lee al arrancar: un cambio en `botikor.conf` no cuenta hasta reiniciar el bot. `GHOST_PORT_INT=auto` se vuelve a detectar con `actualizar_canales`.
@@ -165,6 +206,3 @@ Para el bucle de streams, simular `VIVOS` y ejecutar ciclo a ciclo el bloque ent
 
 ## Ideas pendientes (por orden de utilidad)
 
-- Carpeta de grabaciones configurable (y `basename` en vez de `cut -c 28-`).
-- Que `actualizar_canales` descargue y reescriba la lista desde ghostreamy.
-- Comando de diagnóstico (`/estado`): versión, tiempo en marcha, OpenWebIF y ghostreamy alcanzables, canales cargados, IP pública.

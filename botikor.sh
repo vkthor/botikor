@@ -55,18 +55,27 @@ log=botikor.log
 #   WEBIF              direccion de OpenWebIF (http://127.0.0.1)
 #   WEBIF_USUARIO      usuario de OpenWebIF, si pide contrasena (vacio: no)
 #   WEBIF_CLAVE        su contrasena
-#   GHOSTLIST          lista de canales de ghostreamy (lista.m3u8)
+#   GHOSTLIST          fichero con la lista de canales (lista.m3u8)
+#   GHOSTLIST_URL      su "m3u URL" en ghostreamy (Listas). Si esta puesta,
+#                      el bot descarga la lista de ahi (actualizar_canales);
+#                      vacia: la persona copia el fichero a mano. Lleva el
+#                      codigo de acceso de ghostreamy: nunca va al log
 #   GHOST_PORT_INT     puerto donde escucha ghostreamy en el deco; "auto" lo
 #                      saca de las URLs de GHOSTLIST (si no puede, 3138)
 #   GHOST_PORT_EXT     puerto que el router abre hacia Internet y redirige al
 #                      interno; solo lo usa "canal X". Vacio: igual al interno
 #   STREAMPORT_NATIVO  puerto de streaming propio de Enigma2 (8001)
+#   GRABACIONES        carpeta donde graba el deco (/hdd/movie); el bot avisa
+#                      de cada grabacion nueva (*.ts) que aparece en ella
+#   OSCAM_LOG          log de OSCam (/tmp/oscam.log); "estado" lo lee para
+#                      decir si se esta descifrando bien. Vacio: no se mira
 #
 # Si falta el fichero (o el TOKEN o el ID) y el script se lanza a mano desde
 # una terminal, pregunta los datos y lo crea (configuracion_inicial). En un
 # arranque sin terminal nunca pregunta: lo anota en el log y se cierra. Para
 # cambiar la configuracion: "botikor.sh --configurar" (con el bot parado) o
 # editar el fichero y reiniciar el bot.
+# Al terminar ofrece instalar el arranque automatico (ver "INSTALACION").
 
 # ============================================================
 
@@ -79,11 +88,14 @@ WEBIF="http://127.0.0.1"
 WEBIF_USUARIO=""
 WEBIF_CLAVE=""
 GHOSTLIST="$(pwd)/lista.m3u8"
+GHOSTLIST_URL=""
 GHOST_PORT_INT="auto"
 GHOST_PORT_EXT=""
 STREAMPORT_NATIVO="8001"
+GRABACIONES="/hdd/movie"
+OSCAM_LOG="/tmp/oscam.log"
 
-CLAVES_CONF="TOKEN ID WEBIF WEBIF_USUARIO WEBIF_CLAVE GHOSTLIST GHOST_PORT_INT GHOST_PORT_EXT STREAMPORT_NATIVO"
+CLAVES_CONF="TOKEN ID WEBIF WEBIF_USUARIO WEBIF_CLAVE GHOSTLIST GHOSTLIST_URL GHOST_PORT_INT GHOST_PORT_EXT STREAMPORT_NATIVO GRABACIONES OSCAM_LOG"
 
 # Lee $CONF. Deja en CONF_AVISOS las lineas que no entiende (para el log).
 leer_conf() {
@@ -132,6 +144,58 @@ detectar_puerto_ghost() {
 		| sort | uniq -c | sort -rn | awk 'NR == 1 { print $2 }'
 }
 
+# LISTA DE CANALES DESDE GHOSTREAMY
+# En la web de ghostreamy (Listas) cada lista tiene su "m3u URL", del tipo
+# http://IP:3138/s/<lista>/l/<codigo>/l.m3u8, una por cada IP del deco. El bot
+# corre en el propio deco, asi que siempre la pide a 127.0.0.1 (las IPs de la
+# web pueden no ser alcanzables) con el mismo puerto y ruta; ghostreamy
+# devuelve entonces las URLs de los canales tambien con 127.0.0.1.
+
+# Imprime la URL con el host cambiado por 127.0.0.1, o nada si no es una URL.
+url_lista_local() {
+	[[ "$1" =~ ^(https?)://([^/@]*@)?([^/:]+|\[[^]]*\])(:[0-9]+)?(/.+)$ ]] || return 1
+	printf '%s://127.0.0.1%s%s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[4]}" "${BASH_REMATCH[5]}"
+}
+
+# Para el log y la pantalla: solo esquema, host y puerto (la ruta lleva el
+# codigo de acceso de ghostreamy).
+url_lista_segura() {
+	printf '%s\n' "$1" | sed -E 's#^(https?://[^/]+)/.*#\1/... (ruta oculta)#'
+}
+
+# descargar_lista URL FICHERO: descarga la lista y, si es una lista m3u con
+# canales, sustituye FICHERO (el anterior queda en FICHERO.anterior). Deja en
+# LISTA_CANALES los canales distintos (por tvg-name) y en LISTA_ERROR el motivo
+# si falla; en ese caso FICHERO no se toca.
+descargar_lista() {
+	local url="$1" destino="$2" tmp="$2.descarga" n_inf n_url
+	LISTA_ERROR=""
+	LISTA_CANALES=0
+	rm -f "$tmp"
+	if ! LISTA_ERROR=$(curl -fsS --max-time 30 -o "$tmp" "$url" 2>&1); then
+		LISTA_ERROR="no se ha podido descargar ($(printf '%s' "$LISTA_ERROR" | head -n 1))"
+		rm -f "$tmp"
+		return 1
+	fi
+	n_inf=$(grep -c '^#EXTINF' "$tmp" 2>/dev/null)
+	n_url=$(grep -cE '^https?://' "$tmp" 2>/dev/null)
+	if ! head -n 5 "$tmp" | grep -q '#EXTM3U' || [ "${n_inf:-0}" -eq 0 ] || [ "${n_url:-0}" -eq 0 ]; then
+		LISTA_ERROR="lo descargado no es una lista m3u con canales"
+		rm -f "$tmp"
+		return 1
+	fi
+	LISTA_CANALES=$(grep -o 'tvg-name="[^"]*"' "$tmp" | sort -u | grep -c .)
+	[ "$LISTA_CANALES" -gt 0 ] || LISTA_CANALES=$n_inf
+	mkdir -p "$(dirname "$destino")"
+	[ -f "$destino" ] && cp -p "$destino" "$destino.anterior"
+	if ! mv "$tmp" "$destino"; then
+		LISTA_ERROR="no se puede escribir $destino"
+		rm -f "$tmp"
+		return 1
+	fi
+	return 0
+}
+
 # Escribe $CONF con los valores actuales, de forma atomica y con permisos 600.
 guardar_conf() {
 	(
@@ -173,7 +237,7 @@ preguntar() {
 # la persona en la terminal.
 configuracion_inicial() {
 	local api nombre_bot respuesta datos ultimo intentos chat nombre tipo
-	local codigo detectado n_canales tok
+	local codigo detectado n_canales tok url url_local
 
 	echo
 	echo "=============================================="
@@ -185,7 +249,10 @@ configuracion_inicial() {
 	# Otro botikor en marcha se "comeria" los mensajes de Telegram.
 	# "sh .../botikor.sh": el bot en marcha, no un editor con el fichero abierto.
 	for p in $(pgrep -f 'sh ([^ ]*/)?botikor\.sh( |$)' 2>/dev/null); do
-		if [ "$p" != "$$" ] && [ "$p" != "$PPID" ]; then
+		# El propio $( ) de esta linea es un hijo con la misma linea de orden:
+		# cuando se revisa la lista ya ha terminado, y por eso se descartan los
+		# PID que no siguen vivos.
+		if [ "$p" != "$$" ] && kill -0 "$p" 2>/dev/null; then
 			echo
 			echo "Hay otro BOTikor en marcha (PID $p). Paralo antes de configurar"
 			echo "(por ejemplo: /etc/init.d/botikor stop) y vuelve a lanzar este comando."
@@ -331,16 +398,51 @@ for u in d.get("result", []):
 
 	# 4. Lista de canales
 	echo
-	echo "4/5 LISTA DE CANALES DE GHOSTREAMY (lista.m3u8)"
-	echo "    Se descarga desde la web de ghostreamy y se deja en el deco."
-	preguntar GHOSTLIST "    Ruta del fichero" "$GHOSTLIST"
-	if [ -f "$GHOSTLIST" ]; then
-		n_canales=$(grep -cE '^https?://' "$GHOSTLIST" 2>/dev/null)
-		detectado=$(detectar_puerto_ghost "$GHOSTLIST")
-		echo "    Encontrada: $n_canales URLs${detectado:+, puerto de ghostreamy $detectado}."
-	else
-		echo "    Todavia no existe. El bot arrancara sin canales: cuando la tengas,"
-		echo "    copiala ahi y envia /actualizar_canales al bot."
+	echo "4/5 LISTA DE CANALES DE GHOSTREAMY"
+	echo "    En la web de ghostreamy entra en Listas y, en la lista que quieras usar,"
+	echo "    pulsa el boton \"m3u URL\": copia esa direccion y pegala aqui (da igual"
+	echo "    cual de las IPs). Con ella el bot descarga la lista el solo, ahora y cada"
+	echo "    vez que le envies /actualizar_canales. Esa direccion lleva tu codigo de"
+	echo "    ghostreamy: no la compartas."
+	echo "    Si prefieres copiar tu el fichero lista.m3u8 al deco, pulsa Intro."
+	while :; do
+		if [ -n "$GHOSTLIST_URL" ]; then
+			leer -p "    Direccion m3u [Intro = mantener la actual; 'ninguna' = usar fichero]: " url
+			url="${url:-$GHOSTLIST_URL}"
+		else
+			leer -p "    Direccion m3u: " url
+		fi
+		url="${url//[[:space:]]/}"
+		[ "$url" = "ninguna" ] && url=""
+		if [ -z "$url" ]; then
+			GHOSTLIST_URL=""
+			break
+		fi
+		if ! url_local=$(url_lista_local "$url"); then
+			echo "    Eso no parece una direccion (empieza por http://). Prueba otra vez."
+			continue
+		fi
+		if descargar_lista "$url_local" "$GHOSTLIST"; then
+			echo "    Correcto: lista descargada, $LISTA_CANALES canales."
+			GHOSTLIST_URL="$url_local"
+			break
+		fi
+		echo "    No funciona: $LISTA_ERROR."
+		case "$url" in
+			https:*) echo "    Prueba con la direccion que empieza por http:// (sin s)." ;;
+			*) echo "    Esta ghostreamy en marcha? Has copiado la direccion m3u entera?" ;;
+		esac
+	done
+	if [ -z "$GHOSTLIST_URL" ]; then
+		preguntar GHOSTLIST "    Ruta del fichero" "$GHOSTLIST"
+		if [ -f "$GHOSTLIST" ]; then
+			n_canales=$(grep -cE '^https?://' "$GHOSTLIST" 2>/dev/null)
+			detectado=$(detectar_puerto_ghost "$GHOSTLIST")
+			echo "    Encontrada: $n_canales URLs${detectado:+, puerto de ghostreamy $detectado}."
+		else
+			echo "    Todavia no existe. El bot arrancara sin canales: cuando la tengas,"
+			echo "    copiala ahi y envia /actualizar_canales al bot."
+		fi
 	fi
 
 	# 5. Puertos de ghostreamy
@@ -358,6 +460,15 @@ for u in d.get("result", []):
 		preguntar GHOST_PORT_EXT "    Tiene que ser un numero de 1 a 65535 (o Intro)" ""
 	done
 
+	# Carpeta de grabaciones: solo se pregunta si la de siempre no existe.
+	if [ ! -d "$GRABACIONES" ]; then
+		echo
+		echo "    GRABACIONES: el bot avisa cuando el deco empieza a grabar algo, mirando"
+		echo "    la carpeta donde graba. $GRABACIONES no existe en este deco."
+		preguntar GRABACIONES "    Carpeta de grabaciones" "$GRABACIONES"
+		[ -d "$GRABACIONES" ] || echo "    Tampoco existe ahora: se guarda igual (por si es un disco que aun no esta montado)."
+	fi
+
 	if ! guardar_conf; then
 		echo
 		echo "No he podido escribir $(pwd)/$CONF."
@@ -367,24 +478,207 @@ for u in d.get("result", []):
 	echo
 	echo "Guardado en $(pwd)/$CONF:"
 	echo "    bot @$nombre_bot | chat $ID | OpenWebIF $WEBIF${WEBIF_USUARIO:+ (usuario $WEBIF_USUARIO)}"
-	echo "    lista $GHOSTLIST | puertos ghostreamy ${GHOST_PORT_INT}->${GHOST_PORT_EXT:-(el mismo)}"
-	echo
-	echo "El bot arranca ahora en esta terminal (Ctrl+C lo para). Para que arranque"
-	echo "solo con el deco, mira la guia de instalacion."
-	echo
+	echo "    lista $GHOSTLIST${GHOSTLIST_URL:+ (se descarga de ghostreamy)} | puertos ghostreamy ${GHOST_PORT_INT}->${GHOST_PORT_EXT:-(el mismo)}"
+	echo "    grabaciones en $GRABACIONES"
 	return 0
 }
 
 conf_completa() { token_valido "$TOKEN" && id_valido "$ID"; }
 
+# ============================================================
+
+# INSTALACION: arranque automatico con el deco
+#
+# Al terminar la configuracion inicial (o con "botikor.sh --instalar") se
+# ofrece dejar el bot instalado:
+#   1. copia este script a $DESTINO_SCRIPT, si no se esta ejecutando ya desde
+#      ahi (la version que hubiera queda en .anterior);
+#   2. crea $INIT_BOTIKOR, que arranca y para el bot con start-stop-daemon y
+#      un fichero de PID, y lo activa en el arranque con update-rc.d (o, si
+#      no existe, con los enlaces de /etc/rc?.d a mano);
+#   3. arranca el bot en segundo plano.
+# Si $INIT_BOTIKOR ya existe y no lo ha creado BOTikor, no se toca. Para
+# quitarlo: "$INIT_BOTIKOR stop", "update-rc.d -f botikor remove" y borrar
+# $INIT_BOTIKOR.
+
+# ============================================================
+
+DESTINO_SCRIPT="/usr/script/botikor.sh"
+INIT_BOTIKOR="/etc/init.d/botikor"
+
+# Texto de $INIT_BOTIKOR. start-stop-daemon de busybox no tiene --retry: la
+# espera al parar se hace a mano.
+script_arranque() {
+	cat <<-EOF
+	#!/bin/sh
+	### BEGIN INIT INFO
+	# Provides:          botikor
+	# Required-Start:    \$network \$remote_fs
+	# Required-Stop:
+	# Default-Start:     2 3 4 5
+	# Default-Stop:      0 1 6
+	# Short-Description: BOTikor, bot de Telegram para el deco
+	### END INIT INFO
+	# Creado por BOTikor (botikor.sh --instalar lo vuelve a crear).
+
+	SCRIPT="$DESTINO_SCRIPT"
+	PIDFILE="/var/run/botikor.pid"
+
+	en_marcha() {
+	    [ -f "\$PIDFILE" ] && kill -0 "\$(cat "\$PIDFILE")" 2>/dev/null
+	}
+
+	case "\$1" in
+	    start)
+	        if en_marcha; then
+	            echo "BOTikor ya esta en marcha (PID \$(cat "\$PIDFILE"))"
+	            exit 0
+	        fi
+	        echo "Iniciando BOTikor..."
+	        start-stop-daemon -S -b -m -p "\$PIDFILE" -x "\$SCRIPT"
+	        ;;
+	    stop)
+	        echo "Deteniendo BOTikor..."
+	        if en_marcha; then
+	            kill "\$(cat "\$PIDFILE")"
+	            for i in 1 2 3 4 5 6 7 8 9 10; do
+	                en_marcha || break
+	                sleep 1
+	            done
+	            en_marcha && kill -9 "\$(cat "\$PIDFILE")" 2>/dev/null
+	        fi
+	        rm -f "\$PIDFILE"
+	        ;;
+	    restart)
+	        "\$0" stop
+	        sleep 1
+	        "\$0" start
+	        ;;
+	    status)
+	        if en_marcha; then
+	            echo "BOTikor en marcha (PID \$(cat "\$PIDFILE"))"
+	        else
+	            echo "BOTikor no esta en marcha"
+	            exit 3
+	        fi
+	        ;;
+	    *)
+	        echo "Uso: \$0 {start|stop|restart|status}"
+	        exit 1
+	        ;;
+	esac
+	exit 0
+	EOF
+}
+
+# Pregunta y hace la instalacion. Devuelve 0 si queda instalado.
+instalar_arranque() {
+	local respuesta
+
+	echo
+	echo "INSTALACION"
+	echo "    Para que BOTikor arranque solo cada vez que se enciende el deco:"
+	[ "$SCRIPT_PATH" != "$DESTINO_SCRIPT" ] && echo "      - se copia a $DESTINO_SCRIPT"
+	echo "      - se crea $INIT_BOTIKOR y se activa en el arranque del deco"
+	echo "      - se pone en marcha ahora, en segundo plano"
+
+	if [ -e "$INIT_BOTIKOR" ] && ! grep -q 'Creado por BOTikor' "$INIT_BOTIKOR" 2>/dev/null; then
+		echo "    Ya existe $INIT_BOTIKOR y no lo ha creado BOTikor: no lo toco."
+		echo "    El bot arranca ahora en esta terminal (Ctrl+C lo para)."
+		return 1
+	fi
+
+	leer -p "    Instalo? (s/n) [s]: " respuesta
+	case "${respuesta:-s}" in
+		s|S|si|SI|Si) ;;
+		*)
+			echo "    Sin instalar. El bot arranca ahora en esta terminal (Ctrl+C lo para)."
+			echo "    Para instalarlo mas tarde: $SCRIPT_PATH --instalar"
+			return 1
+			;;
+	esac
+
+	# 1. El script, en su sitio (copia y mv: nunca queda a medio escribir).
+	if [ "$SCRIPT_PATH" != "$DESTINO_SCRIPT" ]; then
+		mkdir -p "$(dirname "$DESTINO_SCRIPT")"
+		[ -f "$DESTINO_SCRIPT" ] && cp -p "$DESTINO_SCRIPT" "$DESTINO_SCRIPT.anterior"
+		if ! cp "$SCRIPT_PATH" "$DESTINO_SCRIPT.nuevo" || ! chmod 755 "$DESTINO_SCRIPT.nuevo" || ! mv "$DESTINO_SCRIPT.nuevo" "$DESTINO_SCRIPT"; then
+			rm -f "$DESTINO_SCRIPT.nuevo"
+			echo "    No he podido copiar el script a $DESTINO_SCRIPT."
+			return 1
+		fi
+		echo "    Copiado a $DESTINO_SCRIPT"
+	fi
+
+	# 2. El arranque automatico.
+	if ! script_arranque > "$INIT_BOTIKOR.nuevo" || ! chmod 755 "$INIT_BOTIKOR.nuevo" || ! mv "$INIT_BOTIKOR.nuevo" "$INIT_BOTIKOR"; then
+		rm -f "$INIT_BOTIKOR.nuevo"
+		echo "    No he podido crear $INIT_BOTIKOR."
+		return 1
+	fi
+
+	if command -v update-rc.d >/dev/null 2>&1; then
+		update-rc.d botikor defaults 90 10 >/dev/null 2>&1
+	fi
+	# Sin update-rc.d (o si no ha dejado los enlaces), a mano.
+	if ! ls /etc/rc3.d/S*botikor >/dev/null 2>&1; then
+		for n in 2 3 4 5; do [ -d "/etc/rc$n.d" ] && ln -sf ../init.d/botikor "/etc/rc$n.d/S90botikor"; done
+		for n in 0 1 6; do [ -d "/etc/rc$n.d" ] && ln -sf ../init.d/botikor "/etc/rc$n.d/K10botikor"; done
+	fi
+
+	if ls /etc/rc3.d/S*botikor >/dev/null 2>&1; then
+		echo "    Creado $INIT_BOTIKOR y activado en el arranque."
+	else
+		echo "    Creado $INIT_BOTIKOR, pero no he podido activarlo en el arranque"
+		echo "    (no hay /etc/rc3.d). Tendras que hacerlo a mano."
+	fi
+	return 0
+}
+
+# Arranca el bot ya instalado, en segundo plano, y explica como manejarlo.
+iniciar_instalado() {
+	echo
+	"$INIT_BOTIKOR" start
+	sleep 2
+	"$INIT_BOTIKOR" status
+	echo
+	echo "Listo. Ya puedes cerrar esta terminal: el bot sigue en marcha y"
+	echo "arrancara solo cada vez que se encienda el deco. Te ha escrito por"
+	echo "Telegram; prueba a enviarle /lista."
+	echo "    Parar / arrancar / reiniciar:  $INIT_BOTIKOR stop | start | restart"
+	echo "    Cambiar la configuracion:      $INIT_BOTIKOR stop; $DESTINO_SCRIPT --configurar"
+	echo "    Log:                           $(pwd)/$log"
+	echo
+}
+
 leer_conf
 
-if [ "$1" = "--configurar" ] || ! conf_completa; then
-	if [ -t 0 ]; then
-		configuracion_inicial || exit 1
-		leer_conf
-	fi
-fi
+case "$1" in
+	--instalar)
+		if [ ! -t 0 ]; then
+			echo "--instalar hace preguntas: lanzalo desde una terminal."
+			exit 1
+		fi
+		if ! conf_completa; then
+			echo "Antes de instalar hay que configurar el bot: lanza $SCRIPT_PATH sin opciones."
+			exit 1
+		fi
+		instalar_arranque && iniciar_instalado
+		exit $?
+		;;
+	*)
+		if [ "$1" = "--configurar" ] || ! conf_completa; then
+			if [ -t 0 ]; then
+				configuracion_inicial || exit 1
+				leer_conf
+				if instalar_arranque; then
+					iniciar_instalado
+					exit 0
+				fi
+			fi
+		fi
+		;;
+esac
 
 # ============================================================
 
@@ -505,21 +799,31 @@ registrar "Recorte del log: $RECORTE_INFO"
 # GRABACIONES: ESTADO INICIAL
 # listagrabaciones guarda los nombres de las grabaciones (*.ts) que ya existian
 # al arrancar, mas las que se vayan anunciando: asi solo se avisa de las nuevas.
-# Se rehace en cada arranque.
-# "cut -c 28-" recorta los 27 primeros caracteres de la ruta: "/hdd/movie/" (11)
-# mas el prefijo de fecha y hora que pone Enigma2, "AAAAMMDD HHMM - " (16);
-# queda "Canal - Titulo.ts". ES FRAGIL: si se cambia la carpeta o el formato del
-# nombre de las grabaciones hay que revisar ese 28. Aparece en tres sitios:
-# aqui, en lastfile (justo debajo) y en newlastfile (deteccion de grabaciones).
-if test -f "listagrabaciones"; then
+# Se rehace en cada arranque. Los nombres son los de nombre_grabacion: Enigma2
+# llama a los ficheros "AAAAMMDD HHMM - Canal - Titulo.ts" (algunas imagenes,
+# con _ en vez de espacios); se quita la carpeta, la fecha, la extension y los _.
+
+# Nombre de una grabacion para mostrar: "Canal - Titulo".
+nombre_grabacion() {
+	local n="${1##*/}"
+	n="${n%.ts}"
+	printf '%s\n' "$n" | sed -E 's/^[0-9]{8}[ _][0-9]{4}[ _]-[ _]//; s/_/ /g; s/  +/ /g'
+}
+
+# Ruta del *.ts mas reciente de $GRABACIONES, o nada.
+ultima_grabacion() {
+	ls -t "$GRABACIONES"/*.ts 2>/dev/null | head -n 1
+}
+
 rm -f listagrabaciones
-fi
+for f in "$GRABACIONES"/*.ts; do
+	[ -e "$f" ] && nombre_grabacion "$f"
+done > listagrabaciones
 
-ls -t /hdd/movie/*.ts 2>/dev/null | cut -c 28- >> listagrabaciones
+lastfile=$(ultima_grabacion)
+[ -n "$lastfile" ] && lastfile=$(nombre_grabacion "$lastfile")
 
-lastfile=$(ls -t /hdd/movie/*.ts 2>/dev/null | head -n 1 | cut -c 28-)
-
-registrar "Grabaciones existentes en /hdd/movie: $(grep -c . listagrabaciones 2>/dev/null) | ultima conocida: ${lastfile:-(ninguna)}"
+registrar "Grabaciones existentes en $GRABACIONES: $(grep -c . listagrabaciones 2>/dev/null) | ultima conocida: ${lastfile:-(ninguna)}"
 
 # OFFSET: id del siguiente mensaje de Telegram que se pide (getUpdates?offset=N).
 # Telegram descarta lo anterior a N, asi que no hay que borrar nada. Se guarda
@@ -561,6 +865,11 @@ chmod 600 "$CONF" 2>/dev/null
 if ! es_puerto "$STREAMPORT_NATIVO"; then
 	registrar "ATENCION: STREAMPORT_NATIVO='$STREAMPORT_NATIVO' no es un puerto valido; se usa 8001"
 	STREAMPORT_NATIVO=8001
+fi
+
+GRABACIONES="${GRABACIONES%/}"
+if [ ! -d "$GRABACIONES" ]; then
+	registrar "ATENCION: la carpeta de grabaciones $GRABACIONES no existe (o no esta montada): no se avisara de grabaciones hasta que aparezca"
 fi
 
 # Usuario y contrasena de OpenWebIF como argumentos de curl. Es un array para
@@ -637,7 +946,7 @@ myip=""
 myip_ts=0
 IP_TTL=300
 
-registrar "Configuracion ($(pwd)/$CONF): TOKEN presente (${#TOKEN} caracteres, no se registra) | ID $ID | WEBIF $WEBIF${WEBIF_USUARIO:+ (usuario $WEBIF_USUARIO)} | lista $GHOSTLIST | puertos ghostreamy $GHOST_PORT_INT->$GHOST_PORT_EXT | puerto nativo $STREAMPORT_NATIVO"
+registrar "Configuracion ($(pwd)/$CONF): TOKEN presente (${#TOKEN} caracteres, no se registra) | ID $ID | WEBIF $WEBIF${WEBIF_USUARIO:+ (usuario $WEBIF_USUARIO)} | lista $GHOSTLIST${GHOSTLIST_URL:+ (descarga: $(url_lista_segura "$GHOSTLIST_URL"))} | puertos ghostreamy $GHOST_PORT_INT->$GHOST_PORT_EXT | puerto nativo $STREAMPORT_NATIVO | grabaciones $GRABACIONES"
 
 # ============================================================
 
@@ -649,7 +958,7 @@ registrar "Configuracion ($(pwd)/$CONF): TOKEN presente (${#TOKEN} caracteres, n
 # lineas). Si Telegram no contesta ok se registra ATENCION, pero no se
 # reintenta ni se aborta nada. Para texto con formato ver telegram_html.
 telegram() {
-	respuesta_tg=$(curl -s --max-time 15 -X POST "$URL" -d "chat_id=$ID" -d "text=$1" 2>&1)
+	respuesta_tg=$(curl -s --max-time 15 -X POST "$URL" -d "chat_id=$ID" --data-urlencode "text=$1" 2>&1)
 
 	# Solo la primera linea del mensaje, para que "lista" no vuelque los
 	# 200 canales en el log.
@@ -681,7 +990,7 @@ escapar_html() {
 }
 
 telegram_html() {
-	respuesta_tg=$(curl -s --max-time 15 -X POST "$URL" -d "chat_id=$ID" -d "parse_mode=HTML" -d "text=$1" 2>&1)
+	respuesta_tg=$(curl -s --max-time 15 -X POST "$URL" -d "chat_id=$ID" -d "parse_mode=HTML" --data-urlencode "text=$1" 2>&1)
 
 	resumen_tg=$(printf '%s' "$1" | head -n 1 | cut -c1-120)
 
@@ -1744,10 +2053,240 @@ Escríbela con puntos, por ejemplo: downgrade $(printf '%s\n' "$version_pedida" 
 
 # ============================================================
 
+# ESTADO DEL BOT ("estado")
+#
+# Resumen de un vistazo para saber si todo funciona: version, tiempo en
+# marcha, si responden OpenWebIF y ghostreamy, como va OSCam, canales,
+# streams, IP publica y grabaciones. Solo consulta: no cambia nada. Los tiempos salen de
+# /proc/uptime (no del reloj, que sincronizar_hora puede mover).
+
+# ============================================================
+
+segundos_encendido() {
+	local up resto
+	read -r up resto < /proc/uptime 2>/dev/null
+	printf '%s\n' "${up%%.*}"
+}
+
+INICIO_UPTIME=$(segundos_encendido)
+
+# Estado de OSCam (el servidor de claves) para "estado", a partir de su log
+# ($OSCAM_LOG; cualquier version de OSCam lo escribe igual). Se miran los
+# ultimos OSCAM_VENTANA segundos:
+#   - ECM: "found" y "cacheN" son descifrados correctos; "not found",
+#     "timeout", "rejected"... son fallos;
+#   - lectores: "connect failed" o "disconnected" sin un ECM correcto despues
+#     del mismo lector = lector caido;
+#   - dvbapi "waiting for matching readers" = el deco espera un lector.
+# Sin ECM en la ventana (canal en abierto, standby) no hay alarma: se dice
+# cuando fue el ultimo. Imprime las lineas para el mensaje; nunca imprime las
+# direcciones de los servidores.
+OSCAM_VENTANA=300
+
+estado_oscam() {
+	local procesos
+	if [ -z "$OSCAM_LOG" ]; then
+		echo "OSCam: no se comprueba (OSCAM_LOG vacío en botikor.conf)"
+		return 0
+	fi
+	procesos=$(pgrep oscam 2>/dev/null | grep -c .)
+	if [ ! -f "$OSCAM_LOG" ]; then
+		if [ "$procesos" -gt 0 ]; then
+			echo "OSCam: en marcha, pero no encuentro su log en $OSCAM_LOG (mira OSCAM_LOG en botikor.conf)"
+		else
+			echo "OSCam: NO está en marcha (no hay proceso ni log en $OSCAM_LOG)"
+		fi
+		return 0
+	fi
+	[ "$procesos" -gt 0 ] || echo "OSCam: ATENCIÓN, no veo el proceso de OSCam en marcha"
+	python3 - "$OSCAM_LOG" "$OSCAM_VENTANA" <<-'PYEOF' 2>/dev/null || echo "OSCam: no he podido leer $OSCAM_LOG"
+		import os, re, sys, time
+
+		ruta, ventana = sys.argv[1], int(sys.argv[2])
+		with open(ruta, "rb") as f:
+		    f.seek(max(0, os.path.getsize(ruta) - 400000))
+		    texto = f.read().decode("utf-8", "replace")
+
+		re_hora = re.compile(r"^\*?\s*(\d{4}/\d\d/\d\d \d\d:\d\d:\d\d) ")
+		re_ecm = re.compile(r"\(ecm\) .*?\): ([a-z][a-z0-9 ]*?) \((\d+) ms\) by (\S+)")
+		re_lector = re.compile(r"\(reader\) (\S+) \[\w+\] (connect failed|disconnected)")
+
+		ahora = time.time()
+		lineas = []
+		for l in texto.splitlines():
+		    m = re_hora.match(l)
+		    if not m:
+		        continue
+		    try:
+		        t = time.mktime(time.strptime(m.group(1), "%Y/%m/%d %H:%M:%S"))
+		    except ValueError:
+		        continue
+		    lineas.append((t, l))
+		if not lineas:
+		    print("OSCam: el log está vacío")
+		    sys.exit(0)
+		# Si el reloj del deco va por detras del log, manda el log.
+		ahora = max(ahora, lineas[-1][0])
+		desde = ahora - ventana
+
+		def hace(t):
+		    s = int(ahora - t)
+		    if s < 60:
+		        return "%d s" % s
+		    if s < 3600:
+		        return "%d min" % (s // 60)
+		    return "%d h %02d min" % (s // 3600, (s % 3600) // 60)
+
+		ok = 0
+		tiempos = []
+		fallos = {}
+		ultimo = None
+		ok_lector = {}
+		caida_lector = {}
+		esperando = 0
+		for t, l in lineas:
+		    m = re_ecm.search(l)
+		    if m:
+		        res, ms, lector = m.group(1).strip(), int(m.group(2)), m.group(3)
+		        bueno = res == "found" or res.startswith("cache")
+		        ultimo = (t, res, lector)
+		        if bueno:
+		            ok_lector[lector] = t
+		        if t >= desde:
+		            if bueno:
+		                ok += 1
+		                tiempos.append(ms)
+		            else:
+		                fallos[res] = fallos.get(res, 0) + 1
+		        continue
+		    m = re_lector.search(l)
+		    if m and t >= desde:
+		        n, _ = caida_lector.get(m.group(1), (0, 0))
+		        caida_lector[m.group(1)] = (n + 1, t)
+		        continue
+		    if t >= desde and "waiting for matching readers" in l:
+		        esperando += 1
+
+		n_fallos = sum(fallos.values())
+		total = ok + n_fallos
+		minutos = ventana // 60
+		lectores_caidos = {r: v for r, v in caida_lector.items() if ok_lector.get(r, 0) < v[1]}
+
+		if total == 0:
+		    if ultimo:
+		        estado = "sin descifrar nada en los últimos %d min (último: %s por %s, hace %s)" % (minutos, ultimo[1], ultimo[2], hace(ultimo[0]))
+		    else:
+		        estado = "sin descifrar nada en el log"
+		    if lectores_caidos or esperando:
+		        estado = "PROBLEMAS: " + estado
+		else:
+		    media = sum(tiempos) // len(tiempos) if tiempos else 0
+		    fallos_txt = "%d fallo%s" % (n_fallos, "" if n_fallos == 1 else "s")
+		    detalle = ", ".join("%s %d" % (k, v) for k, v in sorted(fallos.items(), key=lambda x: -x[1]))
+		    if n_fallos == 0 and not lectores_caidos:
+		        estado = "bien (%d descifrados correctos en %d min, media %d ms)" % (ok, minutos, media)
+		    elif ok / total >= 0.8 and ultimo and (ultimo[1] == "found" or ultimo[1].startswith("cache")) and not lectores_caidos:
+		        estado = "bien, con algún fallo (%d correctos y %s en %d min: %s)" % (ok, fallos_txt, minutos, detalle)
+		    else:
+		        estado = "PROBLEMAS (%d correctos y %s en %d min%s)" % (ok, fallos_txt, minutos, ": " + detalle if detalle else "")
+		        if ultimo:
+		            estado += "; último: %s por %s, hace %s" % (ultimo[1], ultimo[2], hace(ultimo[0]))
+		print("OSCam: " + estado)
+		for r, (n, t) in sorted(lectores_caidos.items()):
+		    print("  Lector %s: no conecta (%d fallo%s de conexión en %d min, el último hace %s)" % (r, n, "" if n == 1 else "s", minutos, hace(t)))
+		if esperando:
+		    print("  El deco está esperando un lector que le dé las claves")
+		PYEOF
+}
+
+enviar_estado() {
+	local ahora txt json estado_webif codigo_ghost n_can origen fecha_lista n_grab libre
+
+	ahora=$(segundos_encendido)
+	duracion_txt $(( ${ahora:-0} - ${INICIO_UPTIME:-0} ))
+	txt="BOTikor v$VERSION
+En marcha desde hace $DUR_TXT"
+	duracion_txt "${ahora:-0}"
+	txt="$txt (deco encendido hace $DUR_TXT)"
+
+	# OpenWebIF: standby y canal que se esta viendo.
+	json=$(curl -s --max-time 5 "${WEBIF_AUTH[@]}" "$WEBIF/api/statusinfo" 2>/dev/null)
+	estado_webif=$(printf '%s' "$json" | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+if str(d.get("inStandby", "")).lower() == "true":
+    print("responde (deco en standby)")
+else:
+    c = d.get("currservice_name") or ""
+    print("responde (viendo %s)" % c if c else "responde")
+' 2>/dev/null) || estado_webif="NO responde en $WEBIF"
+	txt="$txt
+OpenWebIF: $estado_webif"
+
+	# ghostreamy: cualquier respuesta HTTP (aunque sea 401) es que esta vivo.
+	codigo_ghost=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://127.0.0.1:$GHOST_PORT_INT/" 2>/dev/null)
+	case "$codigo_ghost" in
+		""|000) txt="$txt
+ghostreamy: NO responde en el puerto $GHOST_PORT_INT" ;;
+		*) txt="$txt
+ghostreamy: responde en el puerto $GHOST_PORT_INT" ;;
+	esac
+
+	# OSCam: si se esta descifrando bien (ver estado_oscam).
+	txt="$txt
+$(estado_oscam)"
+
+	# Canales y de donde salen.
+	n_can=$(grep -c . canalnombres 2>/dev/null)
+	if [ -n "$GHOSTLIST_URL" ]; then
+		origen="descargada de ghostreamy"
+	else
+		origen="fichero $GHOSTLIST"
+	fi
+	fecha_lista=$(date -r "$GHOSTLIST" '+%d/%m %H:%M' 2>/dev/null)
+	txt="$txt
+Canales: ${n_can:-0} (lista $origen${fecha_lista:+, del $fecha_lista})
+Streams en curso: ${N_ESTADO:-0}"
+
+	# IP publica (la de "canal X").
+	obtener_ip_publica
+	txt="$txt
+IP pública: ${myip:-no se ha podido consultar}"
+
+	# Grabaciones: carpeta, cuantas hay y espacio libre.
+	if [ -d "$GRABACIONES" ]; then
+		n_grab=$(ls "$GRABACIONES"/*.ts 2>/dev/null | grep -c .)
+		libre=$(df -k "$GRABACIONES" 2>/dev/null | awk 'END { if (NF >= 4) printf "%.1f GB", $(NF-2) / 1048576 }')
+		txt="$txt
+Grabaciones: $n_grab en $GRABACIONES${libre:+ (libres $libre)}"
+	else
+		txt="$txt
+Grabaciones: la carpeta $GRABACIONES no existe"
+	fi
+
+	telegram "$txt"
+}
+
+# ============================================================
+
 # Carga inicial de la lista de canales (genera canales.tsv, canalnombres,
 # canalurls y canalurlstrans). Si falla (lista inexistente o ilegible) el bot
 # arranca igualmente y conserva los canal* de la carga anterior; si nunca hubo
 # carga, lista, canal y zap avisan de que no hay canales.
+# Si la lista se descarga de ghostreamy y aun no esta en el deco, se baja
+# ahora (solo si falta: al arrancar el deco ghostreamy puede ir mas lento que
+# el bot; para refrescarla esta actualizar_canales).
+if [ -n "$GHOSTLIST_URL" ] && [ ! -s "$GHOSTLIST" ]; then
+	if descargar_lista "$GHOSTLIST_URL" "$GHOSTLIST"; then
+		registrar "Lista de canales descargada de ghostreamy: $LISTA_CANALES canales"
+		fijar_puerto_ghost
+	else
+		registrar "ATENCION: no se ha podido descargar la lista de ghostreamy: $LISTA_ERROR"
+	fi
+fi
 cargar_canales
 
 # ============================================================
@@ -1948,7 +2487,19 @@ then
 						printf -v formato '%%%dd  %%s\n' "$ancho"
 						listac=$(awk -v formato="$formato" '{ printf formato, NR, $0 }' canalnombres)
 
-						telegram_html "<pre>$(escapar_html "$listac")</pre>"
+						# Telegram admite 4096 caracteres por mensaje: si la lista no
+						# cabe, se manda en varios, cortando siempre entre lineas.
+						# Se mide el texto ya escapado (&amp; cuenta mas que el "&"
+						# que vera la persona), asi que nunca se pasa.
+						trozo=""
+						while IFS= read -r linea; do
+							if [ -n "$trozo" ] && [ $(( ${#trozo} + ${#linea} + 1 )) -gt 3800 ]; then
+								telegram_html "<pre>${trozo%$'\n'}</pre>"
+								trozo=""
+							fi
+							trozo+="$linea"$'\n'
+						done <<< "$(escapar_html "$listac")"
+						[ -n "$trozo" ] && telegram_html "<pre>${trozo%$'\n'}</pre>"
 					fi
 
 				;;
@@ -1970,12 +2521,27 @@ then
 
 					registrar "Comando 'actualizar_canales'"
 
-					if cargar_canales; then
+					# Con GHOSTLIST_URL primero se descarga; si falla, se sigue con
+					# la lista que habia y no se recarga nada.
+					lista_ok=1
+					if [ -n "$GHOSTLIST_URL" ]; then
+						if descargar_lista "$GHOSTLIST_URL" "$GHOSTLIST"; then
+							registrar "Lista de canales descargada de ghostreamy: $LISTA_CANALES canales"
+						else
+							lista_ok=0
+							registrar "ATENCION: no se ha podido descargar la lista de ghostreamy: $LISTA_ERROR"
+							telegram "No he podido descargar la lista de ghostreamy ($LISTA_ERROR). Sigo con la que tenía."
+						fi
+					fi
+
+					if [ "$lista_ok" = 0 ]; then
+						:
+					elif cargar_canales; then
 						# Con GHOST_PORT_INT=auto, la lista nueva manda.
 						puerto_antes="$GHOST_PORT_INT"
 						fijar_puerto_ghost
 						[ "$GHOST_PORT_INT" != "$puerto_antes" ] && registrar "ATENCION: el puerto de ghostreamy cambia de $puerto_antes a $GHOST_PORT_INT"
-						telegram "Lista de canales recargada desde $GHOSTLIST"
+						telegram "Lista de canales ${GHOSTLIST_URL:+descargada de ghostreamy y }recargada: $(grep -c . canalnombres 2>/dev/null) canales"
 					else
 						telegram "No se ha podido leer $GHOSTLIST"
 					fi
@@ -2111,6 +2677,15 @@ then
 
 
 				# log: manda el fichero de log como documento (log.txt).
+				# estado: resumen de si todo funciona. Ver enviar_estado().
+				"estado")
+
+					registrar "Comando 'estado'"
+					enviar_estado
+
+				;;
+
+
 				"log")
 
 					registrar "Comando 'log': enviando $log como log.txt"
@@ -2304,6 +2879,7 @@ then
 /actualizar_botikor
 /downgrade X
 /log
+/estado
 /encender
 /suspender
 /apagar
@@ -2326,12 +2902,13 @@ fi
 # DETECCION DE NUEVAS GRABACIONES
 # ========================================================
 
-# Solo se mira el *.ts MAS RECIENTE de /hdd/movie (por fecha de modificacion).
+# Solo se mira el *.ts MAS RECIENTE de $GRABACIONES (por fecha de modificacion).
 # Si cambia y no esta en listagrabaciones, se anuncia como "grabacion iniciada".
 # Limitaciones: avisa solo del INICIO (no del final); si dos grabaciones
 # empiezan en el mismo ciclo solo se anuncia una; y el nombre se recorta con
-# "cut -c 28-" (ver la nota GRABACIONES al arrancar).
-newlastfile=$(ls -t /hdd/movie/*.ts 2>/dev/null | head -n 1 | cut -c 28-)
+# nombre_grabacion (ver la nota GRABACIONES al arrancar).
+newlastfile=$(ultima_grabacion)
+[ -n "$newlastfile" ] && newlastfile=$(nombre_grabacion "$newlastfile")
 
 if [ "$lastfile" = "$newlastfile" ]
 then
@@ -2345,7 +2922,7 @@ else
 	if [ "$numerob" -gt 3 ]
 	then
 
-		existe=$(grep -F "$newlastfile" listagrabaciones 2>/dev/null || true)
+		existe=$(grep -Fx -- "$newlastfile" listagrabaciones 2>/dev/null || true)
 
 		numerob=${#existe}
 

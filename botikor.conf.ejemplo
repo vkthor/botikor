@@ -25,8 +25,14 @@ WEBIF=http://127.0.0.1
 WEBIF_USUARIO=
 WEBIF_CLAVE=
 
-# Lista de canales que genera ghostreamy (se descarga desde su web).
+# Fichero donde está (o se guarda) la lista de canales.
 GHOSTLIST=/home/root/botikor/lista.m3u8
+
+# Dirección "m3u URL" de la lista en la web de ghostreamy (menú Listas). Con
+# ella el bot descarga la lista él solo al enviarle /actualizar_canales. Da
+# igual qué IP traiga: el bot la pide siempre a 127.0.0.1. Lleva tu código de
+# ghostreamy: no la compartas. Vacía: copias tú el fichero lista.m3u8 al deco.
+GHOSTLIST_URL=
 
 # Puerto donde escucha ghostreamy dentro del deco. Con "auto" se saca de las
 # URLs de la lista (si no se puede, 3138).
@@ -38,3 +44,11 @@ GHOST_PORT_EXT=
 
 # Puerto de streaming propio de Enigma2. Casi nunca hay que cambiarlo.
 STREAMPORT_NATIVO=8001
+
+# Carpeta donde graba el deco. El bot avisa por Telegram de cada grabación
+# nueva que aparece en ella.
+GRABACIONES=/hdd/movie
+
+# Log de OSCam. /estado lo lee para decirte si se está descifrando bien
+# (servidor de claves caído, lector que no conecta...). Vacío: no se mira.
+OSCAM_LOG=/tmp/oscam.log
