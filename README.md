@@ -2,26 +2,26 @@
 
 Bot de Telegram para manejar un decodificador **Enigma2** con el plugin **ghostreamy** desde el móvil, estés donde estés.
 
-Le escribes al bot y él te da los enlaces para ver tus canales fuera de casa, cambia de canal, enciende o apaga el deco y te avisa cuando empieza una grabación o cuando alguien se conecta a ver la tele.
+Le escribes al bot y él te da los enlaces para ver tus canales fuera de casa, cambia de canal, enciende o apaga el deco y te avisa cuando empieza una grabación o cuando alguien se conecta por streaming.
 
-> **Estado: beta.** Funciona a diario en un Octagon SF8008 con OpenSPA 8.3 y ghostreamy 3.1.5. En otros decos e imágenes debería funcionar si cumplen los requisitos, pero no se ha probado.
+> **Estado: beta.** Funciona a diario con OpenSPA 8.3 y ghostreamy 3.1.5. En otros decos e imágenes debería funcionar si cumplen los requisitos, pero no se ha probado.
 
 ## Qué hace
 
-- **Lista de canales** (`/lista`) y **enlace para verlos fuera de casa** (`/canal 5`), en VLC, Kodi o cualquier reproductor.
+- **Lista de canales** (`/lista`) y **enlace para verlos fuera de casa** (`/canal 5`), en VLC o cualquier reproductor similar.
 - **Cambia el canal** de la tele de casa (`/zap 5`).
 - **Enciende, suspende, apaga o reinicia** el deco.
 - **Avisa** cuando empieza una grabación y cuando alguien empieza o deja de ver un stream (con su IP y el canal).
 - **Corta los streams** que estén en curso (`/parar_stream`).
 - **`/estado`**: de un vistazo, si todo funciona (OpenWebIF, ghostreamy, OSCam, canales, grabaciones…).
-- **Se actualiza solo** desde este repositorio cuando se lo pides, comprobando que lo descargado no está alterado.
+- **Se actualiza solo** desde este repositorio cuando se lo pides.
 
-Solo obedece a **tu** chat de Telegram; los mensajes de cualquier otra persona se ignoran.
+Sólo obedece a **tu** chat de Telegram; los mensajes de cualquier otra persona se ignoran.
 
 ## Requisitos
 
 - Un deco con **Enigma2** y acceso de root (SSH o telnet), con `bash`, `curl` y `python3` (las imágenes actuales los traen).
-- **ghostreamy** instalado, con **un solo usuario**, y con estos dos ajustes activados (sin ellos `/zap` no cambia el canal):
+- **ghostreamy** instalado, con **un solo usuario**, y con estos dos ajustes activados (sin ellos `/zap` podría no cambiar el canal):
   - en el usuario de ghostreamy: **«Forzar zap antes de reproducir un canal»**;
   - en OpenWebIF: **«Saltar antes del Stream»** (en inglés, *Zap before streaming*).
 - Un **bot de Telegram** propio, creado con [@BotFather](https://t.me/BotFather).
@@ -38,7 +38,7 @@ curl -fsSLo /tmp/botikor.sh https://github.com/vkthor/botikor/releases/latest/do
 
 El propio script te hace cinco preguntas (token del bot, tu chat, OpenWebIF, lista de canales y puertos), se instala y se pone en marcha. Al acabar, te escribe por Telegram.
 
-Paso a paso, con dónde sacar cada dato: **[guía de instalación](docs/INSTALACION.md)**.
+Instalación paso a paso: **[guía de instalación](docs/INSTALACION.md)**.
 
 ## Comandos
 
@@ -48,7 +48,7 @@ Se pueden escribir con o sin `/`, en mayúsculas o minúsculas. Si le escribes c
 |---|---|
 | `/lista` | Lista de canales numerada. |
 | `/canal X` | Enlace para ver el canal X fuera de casa (y el transcodificado, si lo hay). |
-| `/zap X` | Pone el canal X en la tele de casa. |
+| `/zap X` | Pone el canal X en el deco. |
 | `/actualizar_canales` | Vuelve a descargar la lista de canales de ghostreamy. |
 | `/estado` | Resumen de si todo funciona. |
 | `/log` | Te envía el registro del bot (para buscar fallos). |
@@ -64,7 +64,7 @@ Se pueden escribir con o sin `/`, en mayúsculas o minúsculas. Si le escribes c
 
 ## Configuración
 
-Todo lo de tu instalación está en `/home/root/botikor/botikor.conf`, que solo puede leer root. Para cambiarlo:
+Todo lo de tu instalación está en `/home/root/botikor/botikor.conf`, que sólo puede leer root. Para cambiarlo:
 
 ```bash
 /etc/init.d/botikor stop
