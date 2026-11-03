@@ -2018,7 +2018,7 @@ downgrade_botikor() {
 	case "$numero_pedido" in
 		""|"downgrade"|*[!0-9.vV]*)
 			registrar "Downgrade: parametro no valido '${numero_pedido}'. Disponibles: ${disponibles:-(ninguna)}"
-			telegram "Uso: downgrade X (por ejemplo: downgrade 4.0.0)
+			telegram "Uso: downgrade X (por ejemplo: downgrade 1.0.0)
 Versiones disponibles: ${disponibles:-(ninguna)}"
 			return 1
 			;;
