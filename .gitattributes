@@ -1,0 +1,7 @@
+# Todo el texto con saltos de línea LF, también al trabajar en Windows
+# (bash en el deco se rompe con el \r de CRLF).
+* text=auto eol=lf
+
+*.pdf binary
+*.png binary
+*.jpg binary

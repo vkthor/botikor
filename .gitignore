@@ -1,0 +1,39 @@
+# Notas privadas de Claude (acceso a la red del dueño, preferencias)
+CLAUDE.local.md
+.claude/settings.local.json
+
+# Ficheros que no son del proyecto público (versiones antiguas, puentes...)
+privado/
+
+# Configuración con secretos (token, ID de chat, contraseñas)
+botikor.conf
+*.conf.bak
+
+# Copias del script tal como están en un deco (llevan el token dentro)
+*.anterior
+*_deco.sh
+deco*.sh
+
+# Ficheros de trabajo del bot (si se prueba en local)
+botikor.log
+botikor.log.tmp
+offset
+lista.m3u8
+canales.tsv
+canalnombres
+canalurls
+canalurlstrans
+listagrabaciones
+botikor_nuevo.sh
+botikor_nuevo.sha256
+botikor_versiones.tmp
+
+# Tutorial antiguo (obsoleto)
+botikor-tutorial_v*.pdf
+
+# Basura del sistema
+Thumbs.db
+desktop.ini
+.DS_Store
+*.swp
+*~
