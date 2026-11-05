@@ -77,9 +77,9 @@ Te vuelve a hacer las preguntas, con tus valores actuales por defecto. También 
 
 ## ¿Cómo cambio el idioma del bot?
 
-Con `--configurar` (ver la pregunta anterior): la primera pregunta es el idioma. Contesta `1` para español o `2` para inglés y pulsa Intro en las demás para dejarlas como están. Al final, contesta `s` a «¿Instalo?», para que también el arranque del deco salga en el idioma nuevo.
+Envía `/idioma es` (español) o `/idioma en` (inglés) al bot. Cambia al momento, sin reiniciarse, y se guarda en `botikor.conf`, así que se mantiene aunque reinicies el deco. El arranque del deco también pasa al idioma nuevo. `/idioma` a secas te dice cuál tiene.
 
-Otra forma: cambia la línea `IDIOMA=` de `botikor.conf` (`es` o `en`) y reinicia el bot con `/reiniciar_bot`.
+También puedes hacerlo con `--configurar` (ver la pregunta anterior), cuya primera pregunta es el idioma, o cambiando la línea `IDIOMA=` de `botikor.conf` (`es` o `en`) y reiniciando el bot con `/reiniciar_bot`.
 
 Los comandos se entienden en los dos idiomas sea cual sea el elegido: `/lista` y `/list` hacen lo mismo.
 

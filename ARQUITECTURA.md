@@ -100,6 +100,8 @@ Todo lo que el bot dice (terminal, Telegram, log y el texto de `/etc/init.d/boti
 - No se traducen: las dos líneas de cabecera de cada arranque en el log (`BOTIKOR v…` y `Started on …`, que cuenta `recortar_log`), la marca `Creado por BOTikor` del init.d (con ella se reconoce), los nombres de las claves de `botikor.conf` ni los valores internos del estado de los streams (`directo`, `ghostreamy`).
 - Los mensajes de la terminal van sin tildes (como siempre); los de Telegram, con ellas.
 
+El idioma se puede cambiar sin reiniciar con el comando `idioma X` (ver «Comandos»); por eso los textos fijos `TXT_*` se recalculan ahí también. Las líneas del log anteriores al cambio se quedan en el idioma que tenían.
+
 Para añadir un mensaje nuevo: escribirlo siempre en los dos idiomas.
 
 ## Instalación
@@ -143,7 +145,7 @@ Nunca muestra las direcciones de los servidores. Requisito: que OSCam tenga `log
 
 ## Comandos
 
-Se aceptan con o sin `/` delante, en mayúsculas o minúsculas. Cada uno tiene un nombre en español y otro en inglés; los dos funcionan sea cual sea `IDIOMA`, y la ayuda (rama `*)`) muestra los del idioma elegido.
+Se aceptan con o sin `/` delante, en mayúsculas o minúsculas. Cada uno tiene un nombre en español y otro en inglés; los dos funcionan sea cual sea `IDIOMA`, y la ayuda (`enviar_ayuda`, que usan la rama `*)` e `idioma`) muestra los del idioma elegido.
 
 | Comando | En inglés | Qué hace |
 |---|---|---|
@@ -154,6 +156,7 @@ Se aceptan con o sin `/` delante, en mayúsculas o minúsculas. Cada uno tiene u
 | `actualizar_botikor` | `update_botikor` | Descarga la última release y, si es más nueva, la instala. |
 | `downgrade X` | `downgrade X` | Instala la versión X publicada (`v1.0.0`, `1.0.0` o `100`); sin X, las lista (con `v` delante). |
 | `log` | `log` | Envía el log (últimos arranques) como `log.txt`. |
+| `idioma X` | `language X` | Cambia el idioma al momento (`es`/`en`; también `español`, `english`…): guarda sólo la línea `IDIOMA` de `botikor.conf` (`cambiar_clave_conf`, que respeta el resto del fichero), recalcula los `TXT_*`, rehace `/etc/init.d/botikor` si lo creó BOTikor y manda la ayuda en el idioma nuevo. Sin X, dice el actual. |
 | `estado` | `status` | Resumen de si todo funciona: versión, tiempo en marcha, si responden OpenWebIF (y qué canal se ve) y ghostreamy, cómo va OSCam (ver «OSCam»), canales y de dónde sale la lista, streams en curso, IP pública y grabaciones con el espacio libre. Solo consulta. |
 | `encender` | `power_on` | Saca al deco de standby. |
 | `suspender` | `standby` | Standby normal (el bot sigue vivo). |

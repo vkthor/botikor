@@ -7,6 +7,7 @@
 **English**
 
 - The bot now speaks **English or Spanish**. The installation starts by asking for the language (Spanish by default), and everything the bot says follows it: the questions in the terminal, the Telegram messages, the log and the box's startup script. It is saved as `IDIOMA=` in `botikor.conf`; installations that don't have that line keep Spanish.
+- New command **`/language X`** (`/idioma X`) to change the language at any time from Telegram: `/language en` or `/language es`. It changes right away, without restarting, and is saved in `botikor.conf`.
 - Every command has an English name as well (`/list`, `/channel X`, `/status`, `/power_off`…). Both names work whichever the language; the help shows the ones of the chosen language.
 - `--setup` and `--install` work as well as `--configurar` and `--instalar`.
 - Versions are written with a `v` in front everywhere (`v1.0.1`), as in the release tags: in `/downgrade` and in the release titles.
@@ -16,6 +17,7 @@
 **Español**
 
 - El bot habla ahora **español o inglés**. La instalación empieza preguntando el idioma (español por defecto) y todo lo que dice el bot lo sigue: las preguntas de la terminal, los mensajes de Telegram, el log y el arranque del deco. Se guarda como `IDIOMA=` en `botikor.conf`; las instalaciones que no tienen esa línea siguen en español.
+- Comando nuevo **`/idioma X`** (`/language X`) para cambiar el idioma cuando quieras desde Telegram: `/idioma es` o `/idioma en`. Cambia al momento, sin reiniciar, y se guarda en `botikor.conf`.
 - Cada comando tiene también un nombre en inglés (`/list`, `/channel X`, `/status`, `/power_off`…). Los dos nombres funcionan sea cual sea el idioma; la ayuda muestra los del idioma elegido.
 - `--setup` e `--install` funcionan igual que `--configurar` e `--instalar`.
 - Las versiones se escriben con `v` delante en todas partes (`v1.0.1`), como las etiquetas de las releases: en `/downgrade` y en el título de las releases.

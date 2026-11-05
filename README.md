@@ -6,7 +6,7 @@ A Telegram bot to control an **Enigma2** set-top box with the **ghostreamy** plu
 
 You write to the bot and it gives you the links to watch your channels away from home, changes the channel, switches the box on or off and tells you when a recording starts or when someone connects to a stream.
 
-The bot speaks **English or Spanish**: you choose when you install it.
+The bot speaks **English or Spanish**: you choose when you install it, and you can change it at any time with `/language`.
 
 > **Status: beta.** It works every day on OpenSPA 8.3 with ghostreamy 3.1.5. It should work on other boxes and images that meet the requirements, but it has not been tested on them.
 
@@ -57,6 +57,7 @@ Each command has an English and a Spanish name, and the bot accepts both whateve
 | `/zap X` | `/zap X` | Puts channel X on the box. |
 | `/update_channels` | `/actualizar_canales` | Downloads the channel list from ghostreamy again. |
 | `/status` | `/estado` | Summary of whether everything works. |
+| `/language X` | `/idioma X` | Changes the bot's language right away: `/language en` (English) or `/language es` (Spanish). |
 | `/log` | `/log` | Sends you the bot's log (to look for problems). |
 | `/power_on` | `/encender` | Takes the box out of standby. |
 | `/standby` | `/suspender` | Puts the box in standby (the bot keeps working). |
@@ -70,7 +71,7 @@ Each command has an English and a Spanish name, and the bot accepts both whateve
 
 ## Settings
 
-Everything about your installation is in `/home/root/botikor/botikor.conf`, which only root can read. The language is the `IDIOMA=` line (`en` or `es`). To change anything:
+Everything about your installation is in `/home/root/botikor/botikor.conf`, which only root can read. The language is the `IDIOMA=` line (`en` or `es`); the easiest way to change it is `/language` in Telegram. To change anything else:
 
 ```bash
 /etc/init.d/botikor stop

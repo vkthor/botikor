@@ -247,6 +247,37 @@ descargar_lista() {
 	return 0
 }
 
+# Cambia UNA clave de $CONF (cambiar_clave_conf CLAVE valor) y deja el resto
+# del fichero tal cual: comentarios, orden y valores como GHOST_PORT_INT=auto
+# (guardar_conf escribiria los valores ya calculados). Si la clave no esta, la
+# anade al final. Atomico y con permisos 600. Lo usa el comando "idioma".
+cambiar_clave_conf() {
+	local clave="$1" valor="$2"
+	[ -f "$CONF" ] || return 1
+	(
+		umask 077
+		hecho=0
+		while IFS= read -r linea || [ -n "$linea" ]; do
+			l="${linea#"${linea%%[![:space:]]*}"}"
+			case "$l" in
+				\#*) ;;
+				*=*)
+					k="${l%%=*}"
+					k="${k//[[:space:]]/}"
+					if [ "$k" = "$clave" ]; then
+						[ "$hecho" = 0 ] && printf '%s=%s\n' "$clave" "$valor"
+						hecho=1
+						continue
+					fi
+					;;
+			esac
+			printf '%s\n' "$linea"
+		done < "$CONF" > "$CONF.tmp" || exit 1
+		[ "$hecho" = 1 ] || printf '%s=%s\n' "$clave" "$valor" >> "$CONF.tmp" || exit 1
+		chmod 600 "$CONF.tmp" && mv "$CONF.tmp" "$CONF"
+	) || { rm -f "$CONF.tmp"; return 1; }
+}
+
 # Escribe $CONF con los valores actuales, de forma atomica y con permisos 600.
 guardar_conf() {
 	(
@@ -2450,6 +2481,45 @@ estado_oscam() {
 		PYEOF
 }
 
+# Lista de comandos, en el idioma del bot. Es la unica que ve la persona:
+# mantenerla igual que el case del bucle principal y que ARQUITECTURA.md.
+enviar_ayuda() {
+	telegram "Comandos disponibles:
+/lista
+/canal X
+/zap X
+/actualizar_canales
+/actualizar_botikor
+/downgrade X
+/log
+/estado
+/idioma X
+/encender
+/suspender
+/apagar
+/parar_stream
+/reiniciar_deco
+/reiniciar_bot
+/exit" \
+		"Available commands:
+/list
+/channel X
+/zap X
+/update_channels
+/update_botikor
+/downgrade X
+/log
+/status
+/language X
+/power_on
+/standby
+/power_off
+/stop_stream
+/reboot_box
+/restart_bot
+/exit"
+}
+
 enviar_estado() {
 	local ahora txt json estado_webif codigo_ghost n_can origen fecha_lista n_grab libre f
 
@@ -3180,44 +3250,74 @@ then
 				;;
 
 
-				# Cualquier otra cosa (incluido un "hola"): se contesta con la ayuda. Estos
-				# textos son la unica lista de comandos que ve la persona: mantenerlos igual
-				# que el case y que ARQUITECTURA.md.
+				# idioma X: cambia el idioma del bot (es o en) al momento, sin reiniciarlo.
+				# Lo guarda en botikor.conf (solo la linea IDIOMA, ver cambiar_clave_conf),
+				# rehace /etc/init.d/botikor si lo creo BOTikor (para que sus mensajes
+				# tambien cambien) y contesta con la ayuda en el idioma nuevo. Sin X (o
+				# con una X que no entiende) dice el idioma actual y como cambiarlo.
+				"idioma"|"language")
+
+					case "$numero" in
+						es|ES|Es|español|Español|espanol|Espanol|castellano|Castellano|spanish|Spanish) idioma_nuevo="es" ;;
+						en|EN|En|inglés|Inglés|ingles|Ingles|english|English) idioma_nuevo="en" ;;
+						*) idioma_nuevo="" ;;
+					esac
+
+					if [ -z "$idioma_nuevo" ]; then
+
+						registrar "Comando 'idioma': sin idioma valido ('$numero'), se explica el uso" \
+							"Command 'language': no valid language ('$numero'), explaining usage"
+						telegram "Idioma actual: español. Para cambiarlo:
+/idioma en (inglés)
+/idioma es (español)" \
+							"Current language: English. To change it:
+/language es (Spanish)
+/language en (English)"
+
+					elif [ "$idioma_nuevo" = "$IDIOMA" ]; then
+
+						registrar "Comando 'idioma $idioma_nuevo': ya es el idioma actual" "Command 'language $idioma_nuevo': it is already the current language"
+						telegram "Ya estoy en español" "I am already in English"
+
+					elif ! cambiar_clave_conf IDIOMA "$idioma_nuevo"; then
+
+						registrar "ATENCION: no se ha podido guardar IDIOMA=$idioma_nuevo en $(pwd)/$CONF" \
+							"WARNING: IDIOMA=$idioma_nuevo could not be saved in $(pwd)/$CONF"
+						telegram "No he podido guardar el idioma en $CONF, así que no lo cambio" \
+							"I could not save the language in $CONF, so I am not changing it"
+
+					else
+
+						IDIOMA="$idioma_nuevo"
+						TXT_STREAMS_ACTIVOS=$(t "Streams activos:" "Active streams:")
+						TXT_VIA=$(t "vía" "via")
+						TXT_DIRECTO=$(t "directo" "direct")
+						registrar "Idioma cambiado a '$IDIOMA' y guardado en $(pwd)/$CONF" \
+							"Language changed to '$IDIOMA' and saved in $(pwd)/$CONF"
+
+						if [ -f "$INIT_BOTIKOR" ] && grep -q 'Creado por BOTikor' "$INIT_BOTIKOR" 2>/dev/null; then
+							if script_arranque > "$INIT_BOTIKOR.nuevo" && chmod 755 "$INIT_BOTIKOR.nuevo" && mv "$INIT_BOTIKOR.nuevo" "$INIT_BOTIKOR"; then
+								registrar "$INIT_BOTIKOR rehecho en el idioma nuevo" "$INIT_BOTIKOR recreated in the new language"
+							else
+								rm -f "$INIT_BOTIKOR.nuevo"
+								registrar "ATENCION: no se ha podido rehacer $INIT_BOTIKOR" "WARNING: $INIT_BOTIKOR could not be recreated"
+							fi
+						fi
+
+						telegram "Idioma cambiado a español." "Language changed to English."
+						enviar_ayuda
+
+					fi
+
+				;;
+
+
+				# Cualquier otra cosa (incluido un "hola"): se contesta con la ayuda (ver
+				# enviar_ayuda).
 				*)
 
 					registrar "Comando no reconocido: '$(resumir "$MESSAGE")'" "Unknown command: '$(resumir "$MESSAGE")'"
-					telegram "Comandos disponibles:
-/lista
-/canal X
-/zap X
-/actualizar_canales
-/actualizar_botikor
-/downgrade X
-/log
-/estado
-/encender
-/suspender
-/apagar
-/parar_stream
-/reiniciar_deco
-/reiniciar_bot
-/exit" \
-						"Available commands:
-/list
-/channel X
-/zap X
-/update_channels
-/update_botikor
-/downgrade X
-/log
-/status
-/power_on
-/standby
-/power_off
-/stop_stream
-/reboot_box
-/restart_bot
-/exit"
+					enviar_ayuda
 
 				;;
 

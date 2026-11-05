@@ -77,9 +77,9 @@ It asks you the questions again, with your current values as defaults. You can a
 
 ## How do I change the bot's language?
 
-With `--setup` (see the previous question): the first question is the language. Answer `2` for English or `1` for Spanish and press Enter on the others to leave them as they are. At the end, answer `y` to "Install it?", so that the box's startup script also uses the new language.
+Send `/language en` (English) or `/language es` (Spanish) to the bot. It changes right away, without restarting, and it is saved in `botikor.conf`, so it stays after a reboot. The box's startup script also switches to the new language. `/language` alone tells you the current one.
 
-Another way: change the `IDIOMA=` line in `botikor.conf` (`en` or `es`) and restart the bot with `/restart_bot`.
+You can also do it with `--setup` (see the previous question), whose first question is the language, or by changing the `IDIOMA=` line in `botikor.conf` (`en` or `es`) and restarting the bot with `/restart_bot`.
 
 Commands are understood in both languages whichever one you chose: `/list` and `/lista` do the same.
 

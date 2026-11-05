@@ -6,7 +6,7 @@ Bot de Telegram para manejar un decodificador **Enigma2** con el plugin **ghostr
 
 Le escribes al bot y él te da los enlaces para ver tus canales fuera de casa, cambia de canal, enciende o apaga el deco y te avisa cuando empieza una grabación o cuando alguien se conecta por streaming.
 
-El bot habla **español o inglés**: lo eliges al instalarlo.
+El bot habla **español o inglés**: lo eliges al instalarlo y lo puedes cambiar cuando quieras con `/idioma`.
 
 > **Estado: beta.** Funciona a diario con OpenSPA 8.3 y ghostreamy 3.1.5. En otros decos e imágenes debería funcionar si cumplen los requisitos, pero no se ha probado.
 
@@ -57,6 +57,7 @@ Cada comando tiene un nombre en español y otro en inglés, y el bot acepta los 
 | `/zap X` | `/zap X` | Pone el canal X en el deco. |
 | `/actualizar_canales` | `/update_channels` | Vuelve a descargar la lista de canales de ghostreamy. |
 | `/estado` | `/status` | Resumen de si todo funciona. |
+| `/idioma X` | `/language X` | Cambia el idioma del bot al momento: `/idioma es` (español) o `/idioma en` (inglés). |
 | `/log` | `/log` | Te envía el registro del bot (para buscar fallos). |
 | `/encender` | `/power_on` | Saca el deco de standby. |
 | `/suspender` | `/standby` | Pone el deco en standby (el bot sigue funcionando). |
@@ -70,7 +71,7 @@ Cada comando tiene un nombre en español y otro en inglés, y el bot acepta los 
 
 ## Configuración
 
-Todo lo de tu instalación está en `/home/root/botikor/botikor.conf`, que sólo puede leer root. El idioma es la línea `IDIOMA=` (`es` o `en`). Para cambiar cualquier cosa:
+Todo lo de tu instalación está en `/home/root/botikor/botikor.conf`, que sólo puede leer root. El idioma es la línea `IDIOMA=` (`es` o `en`); lo más fácil para cambiarlo es `/idioma` en Telegram. Para cambiar cualquier otra cosa:
 
 ```bash
 /etc/init.d/botikor stop
