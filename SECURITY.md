@@ -1,33 +1,35 @@
-# Seguridad
+# Security
 
-BOTikor corre como **root** dentro del deco y lo controla por Telegram. Conviene saber qué protege y qué no.
+**English** | [Español](SECURITY.es.md)
 
-## Cómo informar de un problema de seguridad
+BOTikor runs as **root** inside the box and controls it over Telegram. It is worth knowing what it protects and what it doesn't.
 
-Si encuentras una vulnerabilidad, **no abras una incidencia pública**. Usa el botón **«Report a vulnerability»** de la pestaña *Security* de este repositorio (aviso privado de GitHub). Explica qué has encontrado y cómo reproducirlo. Contestaremos en cuanto podamos; es un proyecto personal y sin plazos garantizados.
+## How to report a security problem
 
-## Qué hace el bot para protegerte
+If you find a vulnerability, **don't open a public issue**. Use the **"Report a vulnerability"** button in the *Security* tab of this repository (GitHub private reporting). Explain what you found and how to reproduce it. We will answer as soon as we can; this is a personal project with no guaranteed response times.
 
-- **Un solo chat autorizado.** Solo obedece al chat configurado en `ID`. Los mensajes de cualquier otro chat se ignoran y se anotan en el log.
-- **Actualizaciones verificadas.** `/actualizar_botikor` y `/downgrade` descargan solo de las releases de este repositorio y solo por HTTPS; ni siquiera una redirección puede bajar a HTTP. Antes de instalar, el bot comprueba tres cosas:
-  - la huella SHA-256 publicada junto al script;
-  - que no tiene errores de sintaxis;
-  - la versión.
+## What the bot does to protect you
 
-  Si algo no cuadra, no instala nada.
-- **Los secretos no van al log.** El token del bot y la contraseña de OpenWebIF nunca se escriben en el log, que es lo que envía `/log`. De las direcciones web (la de la lista de ghostreamy y los enlaces de `/canal`, que llevan el código del usuario) solo se anota el servidor y el puerto. El log sí lleva tu IP pública: tenlo en cuenta si lo compartes para pedir ayuda.
-- **La configuración, aparte y protegida.** Va en `botikor.conf` con permisos 600 (solo root) y el bot nunca la ejecuta: solo lee las claves que conoce. El script publicado no lleva datos de nadie.
-- **Solo conexiones de salida.** El bot pregunta a Telegram cada pocos segundos; no abre ningún puerto en el deco ni en el router.
+- **A single authorized chat.** It only obeys the chat set in `ID`. Messages from any other chat are ignored and noted in the log.
+- **Verified updates.** `/update_botikor` and `/downgrade` only download from this repository's releases and only over HTTPS; not even a redirect can drop to HTTP. Before installing, the bot checks three things:
+  - the SHA-256 checksum published next to the script;
+  - that it has no syntax errors;
+  - the version.
 
-## Lo que NO protege (y qué hacer)
+  If anything doesn't match, it installs nothing.
+- **Secrets don't go to the log.** The bot token and the OpenWebIF password are never written to the log, which is what `/log` sends. Of web addresses (the ghostreamy list address and the `/channel` links, which contain the user's code) only the server and port are noted. The log does contain your public IP: keep that in mind if you share it to ask for help.
+- **Settings kept apart and protected.** They are in `botikor.conf` with permissions 600 (root only) and the bot never runs it: it only reads the keys it knows. The published script contains nobody's data.
+- **Outgoing connections only.** The bot asks Telegram every few seconds; it doesn't open any port on the box or on the router.
 
-- **Quien tenga tu token controla el bot.** Si crees que alguien lo ha visto, revócalo en @BotFather (`/revoke`) y configura el nuevo.
-- **Quien entre en tu Telegram** puede apagar el deco o pedir enlaces. Activa la verificación en dos pasos de Telegram.
-- **Las actualizaciones se fían de este repositorio.** La huella detecta descargas corruptas o alteradas por el camino, pero no protege si alguien se hace con la cuenta que publica las versiones. Si prefieres no depender de eso, no uses `/actualizar_botikor` y actualiza a mano, revisando el código.
-- **El puerto de ghostreamy abierto a Internet** (para `/canal`) recibe visitas de programas que buscan puertos abiertos desde el primer día. Usa una contraseña larga en el usuario de ghostreamy y no compartas la «m3u URL» ni la lista descargada: llevan el código de acceso del usuario.
-- **El enlace de `/canal` lleva la IP pública de tu casa.** Compártelo solo con quien quieras que la sepa.
-- **`/parar_stream` corta conexiones fabricando paquetes TCP** (sockets *raw*). Necesita root y solo actúa sobre los puertos de streaming del propio deco.
+## What it does NOT protect (and what to do)
 
-## Versiones con soporte
+- **Whoever has your token controls the bot.** If you think someone has seen it, revoke it in @BotFather (`/revoke`) and set up the new one.
+- **Whoever gets into your Telegram** can switch the box off or ask for links. Turn on Telegram's two-step verification.
+- **Updates trust this repository.** The checksum detects downloads that are corrupt or altered on the way, but it doesn't protect you if someone takes over the account that publishes the versions. If you prefer not to depend on that, don't use `/update_botikor` and update by hand, reviewing the code.
+- **The ghostreamy port open to the Internet** (for `/channel`) gets visits from programs looking for open ports from day one. Use a long password for the ghostreamy user and don't share the "m3u URL" or the downloaded list: they contain the user's access code.
+- **The `/channel` link contains your home's public IP.** Only share it with people you want to know it.
+- **`/stop_stream` cuts connections by crafting TCP packets** (*raw* sockets). It needs root and only acts on the streaming ports of the box itself.
 
-Solo la última versión publicada. Actualiza con `/actualizar_botikor`.
+## Supported versions
+
+Only the latest published version. Update with `/update_botikor`.

@@ -1,8 +1,10 @@
 # Guía de instalación de BOTikor
 
+[English](INSTALL.md) | **Español**
+
 Esta guía te lleva de cero a tener el bot funcionando. Calcula una media hora. No hace falta saber programar, pero sí escribir algún comando en el deco; aquí te decimos exactamente cuáles.
 
-**Resumen:** preparas ghostreamy (y, si quieres, OSCam), creas un bot en Telegram, entras en el deco, lanzas un comando y contestas cinco preguntas. Lo demás lo hace el propio BOTikor.
+**Resumen:** preparas ghostreamy (y, si quieres, OSCam), creas un bot en Telegram, entras en el deco, lanzas un comando, eliges el idioma y contestas cinco preguntas. Lo demás lo hace el propio BOTikor.
 
 ## Qué necesitas
 
@@ -65,10 +67,10 @@ Ya dentro del deco, copia y pega este comando:
 curl -fsSLo /tmp/botikor.sh https://github.com/vkthor/botikor/releases/latest/download/botikor.sh && bash /tmp/botikor.sh
 ```
 
-Descarga la última versión y la arranca. Ahora te hace cinco preguntas. En las que muestran un valor entre corchetes, basta con pulsar Intro para aceptarlo.
+Descarga la última versión y la arranca. Lo primero que te pregunta es el **idioma**: `1` (o Intro) para español, `2` para inglés. Todo lo que diga el bot a partir de ahí (en la terminal, por Telegram y en su log) saldrá en ese idioma. Después te hace cinco preguntas. En las que muestran un valor entre corchetes, basta con pulsar Intro para aceptarlo.
 
 1. **Token del bot**: pega el del paso 4. El bot comprueba con Telegram que es válido y te dice su nombre.
-2. **Tu chat**: abre Telegram y escribe cualquier cosa a tu bot (por ejemplo, `hola`). El script lo detecta, te enseña tu nombre y te pregunta si eres tú. A partir de ahí el bot solo obedecerá a ese chat.
+2. **Tu chat**: abre Telegram y escribe cualquier cosa a tu bot (por ejemplo, `hola`). El script lo detecta, te enseña tu nombre y te pregunta si eres tú. A partir de ahí el bot sólo obedecerá a ese chat.
 3. **OpenWebIF**: normalmente basta con pulsar Intro. Si pide contraseña, te pregunta el usuario y la contraseña.
 4. **Lista de canales**: pega la dirección «m3u URL» del paso 1. El script descarga la lista y te dice cuántos canales tiene.
 5. **Puertos de ghostreamy**:
@@ -83,7 +85,7 @@ Al final te pregunta **«¿Instalo?»**. Contesta `s` (o pulsa Intro):
 
 Ya puedes cerrar la terminal.
 
-> Toda tu configuración queda en `/home/root/botikor/botikor.conf`, que solo puede leer root. Lleva tu token y la dirección de tu lista: no lo compartas.
+> Toda tu configuración queda en `/home/root/botikor/botikor.conf`, que sólo puede leer root. Lleva tu token y la dirección de tu lista: no lo compartas.
 
 ## 7. Comprueba que funciona
 
@@ -93,7 +95,7 @@ En Telegram, tu bot te habrá escrito «BOTikor v… iniciado». Prueba:
 - `/lista`: tus canales numerados.
 - `/zap 1`: la tele de casa debería cambiar al canal 1.
 
-Si algo no va, mira las [preguntas frecuentes](FAQ.md).
+Si algo no va, mira las [preguntas frecuentes](FAQ.es.md).
 
 ## 8. Ver los canales fuera de casa (opcional)
 
@@ -121,7 +123,7 @@ Envía `/actualizar_botikor` al bot. Si hay una versión más nueva:
 3. la instala;
 4. se reinicia.
 
-Tu configuración no se toca.
+Tu configuración no se toca. Los cambios de cada versión están en el [CHANGELOG](../CHANGELOG.md).
 
 ## Manejarlo desde el deco
 
@@ -130,7 +132,7 @@ Tu configuración no se toca.
 | Parar el bot | `/etc/init.d/botikor stop` |
 | Arrancarlo | `/etc/init.d/botikor start` |
 | Ver si está en marcha | `/etc/init.d/botikor status` |
-| Cambiar la configuración (con el bot parado) | `/usr/script/botikor.sh --configurar` |
+| Cambiar la configuración o el idioma (con el bot parado) | `/usr/script/botikor.sh --configurar` |
 | Volver a instalar el arranque automático | `/usr/script/botikor.sh --instalar` |
 | Ver el log | `tail -50 /home/root/botikor/botikor.log` |
 

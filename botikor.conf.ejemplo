@@ -1,4 +1,5 @@
 # Configuración de BOTikor: ejemplo comentado.
+# BOTikor settings: commented example.
 #
 # Lo normal es NO escribir este fichero a mano: la primera vez que lanzas
 # botikor.sh desde una terminal te hace las preguntas y crea botikor.conf
@@ -6,49 +7,85 @@
 # /home/root/botikor/botikor.conf, rellénalo y protégelo:
 #     chmod 600 /home/root/botikor/botikor.conf
 #
+# Usually you do NOT write this file by hand: the first time you run
+# botikor.sh from a terminal it asks you the questions and creates
+# botikor.conf by itself. If you prefer to do it by hand, copy this file as
+# /home/root/botikor/botikor.conf, fill it in and protect it:
+#     chmod 600 /home/root/botikor/botikor.conf
+#
 # Formato: una línea CLAVE=valor por variable, SIN comillas y sin espacios
 # alrededor del "=". El valor llega tal cual hasta el final de la línea, así
 # que una contraseña puede llevar $ " ` \ o espacios. Las líneas que empiezan
 # por # son comentarios. Este fichero lleva el token del bot: no lo compartas.
+#
+# Format: one KEY=value line per variable, WITHOUT quotes and without spaces
+# around the "=". The value is taken as it is up to the end of the line, so a
+# password can contain $ " ` \ or spaces. Lines starting with # are comments.
+# This file contains the bot token: don't share it.
+
+# Idioma del bot: es (español) o en (inglés). Todo lo que dice el bot (en la
+# terminal, por Telegram y en el log) sale en este idioma. Sin esta línea: es.
+# Bot language: en (English) or es (Spanish). Everything the bot says (in the
+# terminal, in Telegram and in the log) is in this language. Without it: es.
+IDIOMA=es
 
 # Token del bot. Te lo da @BotFather al crearlo (/newbot). Obligatorio.
+# Bot token. @BotFather gives it to you when you create it (/newbot). Required.
 TOKEN=
 
 # Número del único chat al que obedece el bot (el tuyo). Obligatorio.
 # Te lo da @userinfobot, o la configuración inicial al escribirle al bot.
+# Number of the only chat the bot obeys (yours). Required.
+# @userinfobot tells you, or the initial setup when you write to the bot.
 ID=
 
 # Dirección de OpenWebIF (la web del deco). En el propio deco es esta.
+# Address of OpenWebIF (the box's web page). On the box itself it is this one.
 WEBIF=http://127.0.0.1
 
-# Solo si OpenWebIF pide usuario y contraseña; si no, déjalos vacíos.
+# Sólo si OpenWebIF pide usuario y contraseña; si no, déjalos vacíos.
+# Only if OpenWebIF asks for a user name and password; otherwise leave them empty.
 WEBIF_USUARIO=
 WEBIF_CLAVE=
 
 # Fichero donde está (o se guarda) la lista de canales.
+# File where the channel list is (or is saved).
 GHOSTLIST=/home/root/botikor/lista.m3u8
 
 # Dirección "m3u URL" de la lista en la web de ghostreamy (menú Listas). Con
 # ella el bot descarga la lista él solo al enviarle /actualizar_canales. Da
 # igual qué IP traiga: el bot la pide siempre a 127.0.0.1. Lleva tu código de
 # ghostreamy: no la compartas. Vacía: copias tú el fichero lista.m3u8 al deco.
+# "m3u URL" address of the list in the ghostreamy web page (Lists menu). With
+# it the bot downloads the list by itself when you send it /update_channels.
+# It doesn't matter which IP it has: the bot always asks 127.0.0.1. It contains
+# your ghostreamy code: don't share it. Empty: you copy lista.m3u8 to the box.
 GHOSTLIST_URL=
 
 # Puerto donde escucha ghostreamy dentro del deco. Con "auto" se saca de las
 # URLs de la lista (si no se puede, 3138).
+# Port where ghostreamy listens inside the box. With "auto" it is taken from
+# the URLs of the list (if that is not possible, 3138).
 GHOST_PORT_INT=auto
 
-# Puerto que tu router abre hacia Internet y lleva al de ghostreamy. Solo lo
+# Puerto que tu router abre hacia Internet y lleva al de ghostreamy. Sólo lo
 # usa /canal X para darte la URL de fuera de casa. Vacío: el mismo que el interno.
+# Port your router opens to the Internet and forwards to ghostreamy's. Only
+# /channel X uses it, to give you the URL for outside home. Empty: same as internal.
 GHOST_PORT_EXT=
 
 # Puerto de streaming propio de Enigma2. Casi nunca hay que cambiarlo.
+# Enigma2's own streaming port. It almost never needs changing.
 STREAMPORT_NATIVO=8001
 
 # Carpeta donde graba el deco. El bot avisa por Telegram de cada grabación
 # nueva que aparece en ella.
+# Folder where the box records. The bot tells you in Telegram about every new
+# recording that appears in it.
 GRABACIONES=/hdd/movie
 
 # Log de OSCam. /estado lo lee para decirte si se está descifrando bien
 # (servidor de claves caído, lector que no conecta...). Vacío: no se mira.
+# OSCam log. /status reads it to tell you whether decryption is working
+# (key server down, reader that cannot connect...). Empty: not checked.
 OSCAM_LOG=/tmp/oscam.log

@@ -1,90 +1,99 @@
 # BOTikor
 
-Bot de Telegram para manejar un decodificador **Enigma2** con el plugin **ghostreamy** desde el móvil, estés donde estés.
+**English** | [Español](README.es.md)
 
-Le escribes al bot y él te da los enlaces para ver tus canales fuera de casa, cambia de canal, enciende o apaga el deco y te avisa cuando empieza una grabación o cuando alguien se conecta por streaming.
+A Telegram bot to control an **Enigma2** set-top box with the **ghostreamy** plugin from your phone, wherever you are.
 
-> **Estado: beta.** Funciona a diario con OpenSPA 8.3 y ghostreamy 3.1.5. En otros decos e imágenes debería funcionar si cumplen los requisitos, pero no se ha probado.
+You write to the bot and it gives you the links to watch your channels away from home, changes the channel, switches the box on or off and tells you when a recording starts or when someone connects to a stream.
 
-## Qué hace
+The bot speaks **English or Spanish**: you choose when you install it.
 
-- **Lista de canales** (`/lista`) y **enlace para verlos fuera de casa** (`/canal 5`), en VLC o cualquier reproductor similar.
-- **Cambia el canal** de la tele de casa (`/zap 5`).
-- **Enciende, suspende, apaga o reinicia** el deco.
-- **Avisa** cuando empieza una grabación y cuando alguien empieza o deja de ver un stream (con su IP y el canal).
-- **Corta los streams** que estén en curso (`/parar_stream`).
-- **`/estado`**: de un vistazo, si todo funciona (OpenWebIF, ghostreamy, OSCam, canales, grabaciones…).
-- **Se actualiza solo** desde este repositorio cuando se lo pides.
+> **Status: beta.** It works every day on OpenSPA 8.3 with ghostreamy 3.1.5. It should work on other boxes and images that meet the requirements, but it has not been tested on them.
 
-Sólo obedece a **tu** chat de Telegram; los mensajes de cualquier otra persona se ignoran.
+## What it does
 
-## Requisitos
+- **Channel list** (`/list`) and **a link to watch them away from home** (`/channel 5`), in VLC or any similar player.
+- **Changes the channel** on the TV at home (`/zap 5`).
+- **Switches the box on, to standby, off or reboots it.**
+- **Tells you** when a recording starts and when someone starts or stops watching a stream (with their IP and the channel).
+- **Cuts the streams** in progress (`/stop_stream`).
+- **`/status`**: at a glance, whether everything works (OpenWebIF, ghostreamy, OSCam, channels, recordings…).
+- **Updates itself** from this repository when you ask it to.
 
-- Un deco con **Enigma2** y acceso de root (SSH o telnet), con `bash`, `curl` y `python3` (las imágenes actuales los traen).
-- **ghostreamy** instalado, con **un solo usuario**, y con estos dos ajustes activados (sin ellos `/zap` podría no cambiar el canal):
-  - en el usuario de ghostreamy: **«Forzar zap antes de reproducir un canal»**;
-  - en OpenWebIF: **«Saltar antes del Stream»** (en inglés, *Zap before streaming*).
-- Un **bot de Telegram** propio, creado con [@BotFather](https://t.me/BotFather).
-- Opcional: **OSCam** con su log activado, para que `/estado` diga si se está descifrando bien.
-- Opcional: abrir en el router el puerto de ghostreamy, para ver los canales fuera de casa con `/canal`.
+It only obeys **your** Telegram chat; messages from anyone else are ignored.
 
-## Instalación rápida
+## Requirements
 
-Entra en el deco por SSH y ejecuta:
+- A box with **Enigma2** and root access (SSH or telnet), with `bash`, `curl` and `python3` (current images have them).
+- **ghostreamy** installed, with **a single user**, and with these two settings enabled (without them `/zap` may not change the channel):
+  - in the ghostreamy user, the option to **force a zap before playing a channel** (in the Spanish interface, *«Forzar zap antes de reproducir un canal»*);
+  - in OpenWebIF: **"Zap before streaming"**.
+- A **Telegram bot** of your own, created with [@BotFather](https://t.me/BotFather).
+- Optional: **OSCam** with its log enabled, so that `/status` can tell whether decryption is working.
+- Optional: the ghostreamy port opened on the router, to watch channels away from home with `/channel`.
+
+## Quick install
+
+Log in to the box over SSH and run:
 
 ```bash
 curl -fsSLo /tmp/botikor.sh https://github.com/vkthor/botikor/releases/latest/download/botikor.sh && bash /tmp/botikor.sh
 ```
 
-El propio script te hace cinco preguntas (token del bot, tu chat, OpenWebIF, lista de canales y puertos), se instala y se pone en marcha. Al acabar, te escribe por Telegram.
+The script first asks for the language (English or Spanish) and then five questions (bot token, your chat, OpenWebIF, channel list and ports). Then it installs itself and starts. When it is done, it sends you a Telegram message.
 
-Instalación paso a paso: **[guía de instalación](docs/INSTALACION.md)**.
+Step-by-step installation: **[installation guide](docs/INSTALL.md)**.
 
-## Comandos
+## Commands
 
-Se pueden escribir con o sin `/`, en mayúsculas o minúsculas. Si le escribes cualquier otra cosa, el bot te contesta con la lista de comandos.
+They can be typed with or without `/`, in upper or lower case. If you send it anything else, the bot answers with the list of commands.
 
-| Comando | Qué hace |
-|---|---|
-| `/lista` | Lista de canales numerada. |
-| `/canal X` | Enlace para ver el canal X fuera de casa (y el transcodificado, si lo hay). |
-| `/zap X` | Pone el canal X en el deco. |
-| `/actualizar_canales` | Vuelve a descargar la lista de canales de ghostreamy. |
-| `/estado` | Resumen de si todo funciona. |
-| `/log` | Te envía el registro del bot (para buscar fallos). |
-| `/encender` | Saca el deco de standby. |
-| `/suspender` | Pone el deco en standby (el bot sigue funcionando). |
-| `/apagar` | Apagado completo: el bot deja de funcionar hasta que enciendas el deco. |
-| `/parar_stream` | Corta los streams que haya en curso. |
-| `/reiniciar_deco` | Reinicia el deco. |
-| `/reiniciar_bot` | Reinicia solo el bot. |
-| `/actualizar_botikor` | Instala la última versión publicada, si hay una más nueva. |
-| `/downgrade X` | Instala una versión concreta (sin X, te dice cuáles hay). |
-| `/exit` | Cierra el bot. |
+Each command has an English and a Spanish name, and the bot accepts both whatever the language you chose. The help and the messages use the names of your language.
 
-## Configuración
+| Command | Spanish name | What it does |
+|---|---|---|
+| `/list` | `/lista` | Numbered channel list. |
+| `/channel X` | `/canal X` | Link to watch channel X away from home (and the transcoded one, if there is one). |
+| `/zap X` | `/zap X` | Puts channel X on the box. |
+| `/update_channels` | `/actualizar_canales` | Downloads the channel list from ghostreamy again. |
+| `/status` | `/estado` | Summary of whether everything works. |
+| `/log` | `/log` | Sends you the bot's log (to look for problems). |
+| `/power_on` | `/encender` | Takes the box out of standby. |
+| `/standby` | `/suspender` | Puts the box in standby (the bot keeps working). |
+| `/power_off` | `/apagar` | Deep standby: the bot stops working until you switch the box on. |
+| `/stop_stream` | `/parar_stream` | Cuts the streams in progress. |
+| `/reboot_box` | `/reiniciar_deco` | Reboots the box. |
+| `/restart_bot` | `/reiniciar_bot` | Restarts only the bot. |
+| `/update_botikor` | `/actualizar_botikor` | Installs the latest published version, if there is a newer one. |
+| `/downgrade X` | `/downgrade X` | Installs a specific version, for example `/downgrade v1.0.0` (without X, it tells you which ones there are). |
+| `/exit` | `/exit` | Closes the bot. |
 
-Todo lo de tu instalación está en `/home/root/botikor/botikor.conf`, que sólo puede leer root. Para cambiarlo:
+## Settings
+
+Everything about your installation is in `/home/root/botikor/botikor.conf`, which only root can read. The language is the `IDIOMA=` line (`en` or `es`). To change anything:
 
 ```bash
 /etc/init.d/botikor stop
 ```
 
 ```bash
-/usr/script/botikor.sh --configurar
+/usr/script/botikor.sh --setup
 ```
 
-También puedes editar el fichero a mano y reiniciar el bot. Qué significa cada línea: [`botikor.conf.ejemplo`](botikor.conf.ejemplo).
+It asks the questions again, starting with the language, with your current values as defaults. You can also edit the file by hand and restart the bot. What each line means: [`botikor.conf.ejemplo`](botikor.conf.ejemplo).
 
-## Más información
+## More information
 
-- [Guía de instalación](docs/INSTALACION.md)
-- [Preguntas frecuentes y problemas](docs/FAQ.md)
-- [Seguridad](SECURITY.md)
-- [Cómo está hecho por dentro](ARQUITECTURA.md), para quien quiera tocar el código
+- [Installation guide](docs/INSTALL.md)
+- [Frequently asked questions and problems](docs/FAQ.md)
+- [Security](SECURITY.md)
+- [Changelog](CHANGELOG.md)
+- [How it works inside](ARQUITECTURA.md) (in Spanish), for anyone who wants to touch the code
 
-## Licencia
+## License
 
-BOTikor es software libre bajo la [Licencia Pública General GNU, versión 3 o posterior](LICENSE). Puedes usarlo, estudiarlo, modificarlo y compartirlo; si distribuyes una versión modificada, tiene que seguir siendo libre con la misma licencia. Se ofrece **sin ninguna garantía**.
+BOTikor is free software under the [GNU General Public License, version 3 or later](LICENSE). You can use it, study it, modify it and share it; if you distribute a modified version, it has to stay free under the same license. It comes **without any warranty**.
 
-ghostreamy, OSCam, Enigma2 y OpenWebIF son proyectos de terceros, independientes de este.
+ghostreamy, OSCam, Enigma2 and OpenWebIF are third-party projects, independent from this one.
+
+© 2026 Víctor Cruz

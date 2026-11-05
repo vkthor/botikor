@@ -4,7 +4,7 @@ Documento para quien vaya a tocar `botikor.sh` (tú dentro de seis meses, un col
 
 ## Qué es
 
-Un único script de bash (con trozos de Python embebidos) que corre como root dentro de un decodificador Enigma2 y lo maneja por Telegram: da URLs de streaming, cambia de canal, enciende y apaga, y avisa de grabaciones y de streams.
+Un único script de bash (con trozos de Python embebidos) que corre como root dentro de un decodificador Enigma2 y lo maneja por Telegram: da URLs de streaming, cambia de canal, enciende y apaga, y avisa de grabaciones y de streams. Habla español o inglés (ver «Idioma»).
 
 No necesita servidor propio ni abrir puertos para Telegram: el bot **pregunta** a Telegram (`getUpdates`) cada pocos segundos y solo hace conexiones de salida. Los puertos que se abren en el router son los de ghostreamy, para ver los canales desde fuera de casa.
 
@@ -26,7 +26,7 @@ No necesita servidor propio ni abrir puertos para Telegram: el bot **pregunta** 
 ## Estructura del script (se lee de arriba abajo)
 
 1. **Cabecera**: `VERSION`, `REPO_GITHUB`, directorio de trabajo.
-2. **Configuración** (ver «Configuración» más abajo): valores por defecto, `leer_conf`, `guardar_conf`, validaciones, `detectar_puerto_ghost`, `configuracion_inicial` e instalación (`instalar_arranque`, `script_arranque`, `iniciar_instalado`). Corre antes de redirigir la salida al log, porque la configuración inicial habla con la persona por la terminal.
+2. **Configuración** (ver «Configuración» más abajo): valores por defecto, funciones de idioma (`en_ingles`, `t`, `decir`, `es_si`; ver «Idioma»), `leer_conf`, `guardar_conf`, validaciones, `detectar_puerto_ghost`, `configuracion_inicial` e instalación (`instalar_arranque`, `script_arranque`, `iniciar_instalado`). Corre antes de redirigir la salida al log, porque la configuración inicial habla con la persona por la terminal.
 3. **Arranque**: recorte del log (`recortar_log`), redirección de la salida al log, banner.
 4. **Funciones de apoyo** (se definen antes de usarse):
    - log y salida: `registrar`, `resumir`, `telegram`, `escapar_html`, `telegram_html`, `telegram_documento`
@@ -78,16 +78,29 @@ Fuera de él:
 Cada instalación tiene su configuración en `botikor.conf`, en el directorio de trabajo, con permisos 600. El script no lleva ningún dato de nadie, así que se actualiza o se publica tal cual. `botikor.conf.ejemplo` explica cada clave.
 
 - **Formato:** una línea `CLAVE=valor`; se ignoran las vacías y las que empiezan por `#`. El valor es literal, sin comillas (si va entero entre comillas, se quitan). Se quitan los espacios de alrededor salvo en `WEBIF_CLAVE`, así que una contraseña puede llevar `$`, `"`, `` ` ``, `\` o espacios. El fichero **nunca se ejecuta**: `leer_conf` lo lee línea a línea y solo acepta las claves de `CLAVES_CONF`; las demás se anotan en el log.
-- **Claves:** `TOKEN` e `ID` (obligatorias), `WEBIF`, `WEBIF_USUARIO`, `WEBIF_CLAVE`, `GHOSTLIST`, `GHOSTLIST_URL` (ver «Lista de canales»), `GHOST_PORT_INT` (`auto` = el puerto más repetido en las URLs de la lista; si no hay, 3138), `GHOST_PORT_EXT` (vacío = el interno), `STREAMPORT_NATIVO`, `OSCAM_LOG` (`/tmp/oscam.log`; vacío = no se mira) y `GRABACIONES` (carpeta donde graba el deco; `/hdd/movie`; la configuración inicial solo la pregunta si esa no existe).
-- **Configuración inicial:** si falta el fichero (o el `TOKEN` o el `ID`) y el script se lanza a mano desde una terminal (`[ -t 0 ]`), `configuracion_inicial` hace cinco preguntas:
+- **Claves:** `IDIOMA` (`es` o `en`; sin ella, o con otro valor, `es`), `TOKEN` e `ID` (obligatorias), `WEBIF`, `WEBIF_USUARIO`, `WEBIF_CLAVE`, `GHOSTLIST`, `GHOSTLIST_URL` (ver «Lista de canales»), `GHOST_PORT_INT` (`auto` = el puerto más repetido en las URLs de la lista; si no hay, 3138), `GHOST_PORT_EXT` (vacío = el interno), `STREAMPORT_NATIVO`, `OSCAM_LOG` (`/tmp/oscam.log`; vacío = no se mira) y `GRABACIONES` (carpeta donde graba el deco; `/hdd/movie`; la configuración inicial solo la pregunta si esa no existe).
+- **Configuración inicial:** si falta el fichero (o el `TOKEN` o el `ID`) y el script se lanza a mano desde una terminal (`[ -t 0 ]`), `configuracion_inicial` pregunta primero el idioma (1 español, por defecto; 2 inglés; la pregunta va en los dos idiomas) y después hace cinco preguntas:
   1. el token, que comprueba con `getMe`;
   2. el chat: pide escribir al bot y lo lee con `getUpdates`, saltándose los mensajes pendientes para que no se ejecute un comando viejo;
   3. OpenWebIF: lo prueba y, si responde 401, pide usuario y contraseña;
   4. la lista de canales;
   5. los puertos.
 
-  Después guarda el fichero. Se niega si ya hay otro BOTikor en marcha (se comería los mensajes) y se cancela con Ctrl+D. En un arranque sin terminal nunca pregunta: deja un `ERROR` en el log y se cierra. `botikor.sh --configurar` vuelve a preguntar, con los valores actuales por defecto.
+  Después guarda el fichero. Se niega si ya hay otro BOTikor en marcha (se comería los mensajes) y se cancela con Ctrl+D. En un arranque sin terminal nunca pregunta: deja un `ERROR` en el log y se cierra. `botikor.sh --configurar` (o `--setup`) vuelve a preguntar, con los valores actuales por defecto. Las respuestas s/n aceptan también y/yes, y las palabras clave tienen su versión inglesa (`mantener`/`keep`, `ninguna`/`none`).
 - **OpenWebIF con contraseña:** se pasa a curl como array (`WEBIF_AUTH`), para que la contraseña llegue entera.
+
+## Idioma
+
+Todo lo que el bot dice (terminal, Telegram, log y el texto de `/etc/init.d/botikor`) está escrito en los dos idiomas, uno junto al otro, primero en español y después en inglés. `IDIOMA` decide cuál se usa:
+
+- `registrar "texto" "text"` y `telegram "texto" "text"`: el segundo argumento es la versión inglesa. Con uno solo (una URL, un nombre de canal, un texto ya traducido) se usa ese.
+- `t "texto" "text"` imprime el que toca sin salto de línea, para meterlo en `$(...)`; `decir "texto" "text"` lo imprime con salto de línea (terminal).
+- En los trozos de Python que escriben textos para la persona (`estado_oscam`, `parar_streams`, el estado de OpenWebIF de `enviar_estado`) el idioma entra por argumento o por la variable de entorno `IDIOMA`, con una función `T(es, en)` equivalente.
+- En el bucle principal se evita lanzar procesos por los textos: los fijos de los avisos de streams se calculan una vez (`TXT_STREAMS_ACTIVOS`, `TXT_VIA`, `TXT_DIRECTO`) y los demás usan `en_ingles`, que es un builtin.
+- No se traducen: las dos líneas de cabecera de cada arranque en el log (`BOTIKOR v…` y `Started on …`, que cuenta `recortar_log`), la marca `Creado por BOTikor` del init.d (con ella se reconoce), los nombres de las claves de `botikor.conf` ni los valores internos del estado de los streams (`directo`, `ghostreamy`).
+- Los mensajes de la terminal van sin tildes (como siempre); los de Telegram, con ellas.
+
+Para añadir un mensaje nuevo: escribirlo siempre en los dos idiomas.
 
 ## Instalación
 
@@ -97,7 +110,7 @@ No hay instalador aparte: la persona descarga `botikor.sh`, lo lanza una vez des
 2. crea `/etc/init.d/botikor` (texto en `script_arranque`) y lo activa con `update-rc.d botikor defaults 90 10`; si no hay `update-rc.d`, pone los enlaces de `/etc/rc?.d` a mano;
 3. lo arranca en segundo plano y explica cómo pararlo, reiniciarlo y ver el log.
 
-Si se contesta que no, el bot sigue en primer plano en la terminal. `botikor.sh --instalar` repite solo este paso (exige que ya haya configuración). No se toca un `/etc/init.d/botikor` que no tenga la marca «Creado por BOTikor».
+Si se contesta que no, el bot sigue en primer plano en la terminal. `botikor.sh --instalar` (o `--install`) repite solo este paso (exige que ya haya configuración). No se toca un `/etc/init.d/botikor` que no tenga la marca «Creado por BOTikor». Sus mensajes (`start`, `stop`, `status`) salen en el idioma de la configuración del momento en que se crea: al cambiar de idioma con `--configurar` y contestar que sí a la instalación, se rehace.
 
 Para parar no se usa `--retry` de `start-stop-daemon` (el de busybox no lo anuncia en su ayuda, aunque en OpenSPA lo acepta): `stop` manda TERM, espera hasta 10 s y, si sigue vivo, manda KILL. `start` no lanza un segundo bot si el del fichero de PID sigue vivo.
 
@@ -130,25 +143,25 @@ Nunca muestra las direcciones de los servidores. Requisito: que OSCam tenga `log
 
 ## Comandos
 
-Se aceptan con o sin `/` delante, en mayúsculas o minúsculas.
+Se aceptan con o sin `/` delante, en mayúsculas o minúsculas. Cada uno tiene un nombre en español y otro en inglés; los dos funcionan sea cual sea `IDIOMA`, y la ayuda (rama `*)`) muestra los del idioma elegido.
 
-| Comando | Qué hace |
-|---|---|
-| `lista` | Canales numerados. Si no caben en un mensaje de Telegram (4096 caracteres), van en varios, cortando entre líneas. |
-| `canal X` | URL pública del canal X (y la transcodificada). |
-| `zap X` | Cambia el deco al canal X (ver «Cómo funciona zap»). |
-| `actualizar_canales` | Con `GHOSTLIST_URL`, descarga la lista de ghostreamy (si falla, se queda la anterior); después la vuelve a leer. |
-| `actualizar_botikor` | Descarga la última release y, si es más nueva, la instala. |
-| `downgrade X` | Instala la versión X publicada (`1.0.0`, `v1.0.0` o `100`); sin X, las lista. |
-| `log` | Envía el log (últimos arranques) como `log.txt`. |
-| `estado` | Resumen de si todo funciona: versión, tiempo en marcha, si responden OpenWebIF (y qué canal se ve) y ghostreamy, cómo va OSCam (ver «OSCam»), canales y de dónde sale la lista, streams en curso, IP pública y grabaciones con el espacio libre. Solo consulta. |
-| `encender` | Saca al deco de standby. |
-| `suspender` | Standby normal (el bot sigue vivo). |
-| `apagar` | Apagado **profundo** (el bot deja de correr). |
-| `parar_stream` | Corta los streams activos. |
-| `reiniciar_deco` | Reinicia el deco. |
-| `reiniciar_bot` | Relanza este script sin reiniciar el deco. |
-| `exit` | Cierra el bot. |
+| Comando | En inglés | Qué hace |
+|---|---|---|
+| `lista` | `list` | Canales numerados. Si no caben en un mensaje de Telegram (4096 caracteres), van en varios, cortando entre líneas. |
+| `canal X` | `channel X` | URL pública del canal X (y la transcodificada). |
+| `zap X` | `zap X` | Cambia el deco al canal X (ver «Cómo funciona zap»). |
+| `actualizar_canales` | `update_channels` | Con `GHOSTLIST_URL`, descarga la lista de ghostreamy (si falla, se queda la anterior); después la vuelve a leer. |
+| `actualizar_botikor` | `update_botikor` | Descarga la última release y, si es más nueva, la instala. |
+| `downgrade X` | `downgrade X` | Instala la versión X publicada (`v1.0.0`, `1.0.0` o `100`); sin X, las lista (con `v` delante). |
+| `log` | `log` | Envía el log (últimos arranques) como `log.txt`. |
+| `estado` | `status` | Resumen de si todo funciona: versión, tiempo en marcha, si responden OpenWebIF (y qué canal se ve) y ghostreamy, cómo va OSCam (ver «OSCam»), canales y de dónde sale la lista, streams en curso, IP pública y grabaciones con el espacio libre. Solo consulta. |
+| `encender` | `power_on` | Saca al deco de standby. |
+| `suspender` | `standby` | Standby normal (el bot sigue vivo). |
+| `apagar` | `power_off` | Apagado **profundo** (el bot deja de correr). |
+| `parar_stream` | `stop_stream` | Corta los streams activos. |
+| `reiniciar_deco` | `reboot_box` | Reinicia el deco. |
+| `reiniciar_bot` | `restart_bot` | Relanza este script sin reiniciar el deco. |
+| `exit` | `exit` | Cierra el bot. |
 
 Los comandos son **una palabra** (con `_` si hace falta) porque Telegram solo convierte en enlace clicable letras, cifras y guion bajo. Para añadir uno nuevo, ver la nota sobre `case $comando in` en el bucle principal.
 
@@ -163,22 +176,22 @@ Sin ellos, ghostreamy abre un stream aparte y el deco no se mueve (comprobado en
 
 ## Convenciones del código
 
-- Para escribir en el log: `registrar "texto"` (antepone la hora). Para hablar con la persona: `telegram "texto"`. **Nunca `echo` suelto**: la salida estándar va al log sin hora y la persona no la ve.
+- Para escribir en el log: `registrar "texto" "text"` (antepone la hora). Para hablar con la persona: `telegram "texto" "text"`. Siempre en los dos idiomas (ver «Idioma»). **Nunca `echo` suelto**: la salida estándar va al log sin hora y la persona no la ve.
 - El `TOKEN` no debe aparecer jamás en el log, ni dentro de mensajes de error.
 - No hay `set -e` a propósito: el bot no debe morir porque un comando falle; cada fallo se registra y el bucle sigue.
 - El estado de los streams es texto: una línea por elemento, campos separados por tabuladores, en variables normales (sin arrays asociativos). Ver «ESTADO DE LOS STREAMS: FUNCIONES DE APOYO» en el script.
 - Python embebido en heredocs `<<-'PYEOF'` (comilla simple: bash no interpreta nada dentro). El contenido va sangrado con **tabuladores**, que `<<-` elimina: no empezar línea con espacios. Los datos entran por argumentos o variables de entorno, no interpolados en el código (única excepción: la comparación de versiones de `actualizar_botikor`).
 - Fichero en UTF-8 y con saltos de línea LF (no CRLF: bash se rompe con el `\r`). Si se edita en Windows, usar un editor de código, no Word.
-- `VERSION="X.Y.Z"` debe ser la **primera** línea del fichero que empiece por `VERSION=`. La leen `actualizar_botikor` y `downgrade_botikor` (con `version_de`) y la comparan como tupla de enteros (3.1.10 > 3.1.9). La etiqueta de la release es `v` + esa versión.
+- `VERSION="X.Y.Z"` debe ser la **primera** línea del fichero que empiece por `VERSION=`. La leen `actualizar_botikor` y `downgrade_botikor` (con `version_de`) y la comparan como tupla de enteros (3.1.10 > 3.1.9). Va sin `v` a propósito: así la leen también las instalaciones de la v1.0.0. Hacia fuera siempre se escribe con `v` delante (`v1.0.1`): en los mensajes, en `downgrade`, en la etiqueta y en el título de la release.
 
 ## Cómo se publica una versión
 
-Cada versión es una release de GitHub con etiqueta `vX.Y.Z` y dos ficheros: `botikor.sh` (con `TOKEN` e `ID` vacíos) y `botikor.sh.sha256` (salida de `sha256sum`). `actualizar_botikor` baja la de `releases/latest/download/`; `downgrade X` consulta la lista en la API (`api.github.com/repos/REPO_GITHUB/releases`, 60 consultas por hora e IP) y baja la de `releases/download/vX.Y.Z/`.
+Cada versión es una release de GitHub con etiqueta y título `vX.Y.Z` (como en los demás proyectos de vkthor), notas en inglés y en español (en ese orden, cada bloque con su rótulo en negrita, **English** y **Español**) y dos ficheros: `botikor.sh` (con `TOKEN` e `ID` vacíos) y `botikor.sh.sha256` (salida de `sha256sum`). `actualizar_botikor` baja la de `releases/latest/download/`; `downgrade X` consulta la lista en la API (`api.github.com/repos/REPO_GITHUB/releases`, 60 consultas por hora e IP) y baja la de `releases/download/vX.Y.Z/`.
 
 Para publicar:
 
-1. Subir `VERSION=` en `botikor.sh`, hacer commit y `git push`.
-2. Ejecutar `herramientas/publicar_version.sh` (en Git Bash). Comprueba que no haya cambios sin guardar, que `main` esté subido, `bash -n`, que no haya CRLF, que `TOKEN` e `ID` estén vacíos y que la versión no exista y sea mayor que la última. Publica exactamente lo que hay en el commit, calcula la huella, crea la release y, al terminar, descarga lo publicado y comprueba la huella.
+1. Subir `VERSION=` en `botikor.sh`, anotar los cambios en `CHANGELOG.md` (en inglés y en español), hacer commit y `git push`.
+2. Ejecutar `herramientas/publicar_version.sh` (en Git Bash), con las notas en un fichero: `--notas-fichero notas.md`. Comprueba que no haya cambios sin guardar, que `main` esté subido, `bash -n`, que no haya CRLF, que `TOKEN` e `ID` estén vacíos y que la versión no exista y sea mayor que la última. Publica exactamente lo que hay en el commit, calcula la huella, crea la release y, al terminar, descarga lo publicado y comprueba la huella.
 
 Las releases solo se pueden descargar sin contraseña si el repositorio es público.
 

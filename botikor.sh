@@ -8,9 +8,10 @@
 # los terminos de la Licencia Publica General GNU (GPL) version 3 o
 # posterior. Se distribuye SIN NINGUNA GARANTIA. Ver el fichero LICENSE.
 #
-# Corre como root dentro del deco y lo maneja por Telegram. Instalacion:
-# docs/INSTALACION.md. Arquitectura, comandos, convenciones, limitaciones y
-# como probarlo: ARQUITECTURA.md.
+# Corre como root dentro del deco y lo maneja por Telegram, en espanol o en
+# ingles (IDIOMA en botikor.conf). Instalacion: docs/INSTALACION.md (espanol) y
+# docs/INSTALL.md (ingles). Arquitectura, comandos, convenciones, limitaciones
+# y como probarlo: ARQUITECTURA.md.
 # Requiere bash (no ash), curl, python3 y awk/sed/grep (busybox vale).
 # La configuracion de cada instalacion va aparte, en botikor.conf.
 
@@ -18,8 +19,9 @@
 # downgrade_botikor con grep '^VERSION=' sobre el fichero descargado y la
 # comparan como tupla numerica (3.1.10 es mas nueva que 3.1.9). Por eso esta
 # linea debe empezar por VERSION=, ir entre comillas y ser la PRIMERA del
-# fichero que lo haga. Version beta: aun no se lleva historial de cambios.
-VERSION="1.0.0"
+# fichero que lo haga. Los cambios de cada version: CHANGELOG.md. Al mostrarla
+# se escribe con v delante (v1.0.1), igual que la etiqueta de la release.
+VERSION="1.0.1"
 # REPO_GITHUB: repositorio de GitHub donde se publican las versiones. Cada una
 # es una "release" con etiqueta vX.Y.Z y dos ficheros: botikor.sh (sin ninguna
 # configuracion: esta va en botikor.conf) y botikor.sh.sha256 (su huella). Lo usan
@@ -58,6 +60,8 @@ log=botikor.log
 # llevar $ " ` \ o espacios sin problema. El fichero NUNCA se ejecuta: solo se aceptan las
 # claves de esta lista. Ejemplo comentado: botikor.conf.ejemplo.
 #
+#   IDIOMA             es (espanol) o en (ingles): idioma de todo lo que dice
+#                      el bot (terminal, Telegram y log). Sin el: es
 #   TOKEN              el que da @BotFather (obligatorio; nunca va al log)
 #   ID                 id numerico del unico chat autorizado (obligatorio)
 #   WEBIF              direccion de OpenWebIF (http://127.0.0.1)
@@ -90,6 +94,7 @@ log=botikor.log
 CONF="botikor.conf"
 
 # Valores por defecto (los que no aparezcan en $CONF se quedan asi).
+IDIOMA="es"
 TOKEN=""
 ID=""
 WEBIF="http://127.0.0.1"
@@ -103,11 +108,41 @@ STREAMPORT_NATIVO="8001"
 GRABACIONES="/hdd/movie"
 OSCAM_LOG="/tmp/oscam.log"
 
-CLAVES_CONF="TOKEN ID WEBIF WEBIF_USUARIO WEBIF_CLAVE GHOSTLIST GHOSTLIST_URL GHOST_PORT_INT GHOST_PORT_EXT STREAMPORT_NATIVO GRABACIONES OSCAM_LOG"
+CLAVES_CONF="IDIOMA TOKEN ID WEBIF WEBIF_USUARIO WEBIF_CLAVE GHOSTLIST GHOSTLIST_URL GHOST_PORT_INT GHOST_PORT_EXT STREAMPORT_NATIVO GRABACIONES OSCAM_LOG"
+
+# ============================================================
+
+# IDIOMA: todo lo que el bot dice (en la terminal, por Telegram y en el log)
+# esta escrito en los dos idiomas, uno junto al otro, primero en espanol y
+# despues en ingles. Segun IDIOMA se usa uno u otro:
+#   t "texto en espanol" "text in English"       lo imprime sin salto de linea
+#                                                (para meterlo en $(...))
+#   decir "texto en espanol" "text in English"   lo imprime con salto de linea
+#                                                (para la terminal)
+#   registrar "espanol" "English"                al log (ver REGISTRO EN EL LOG)
+#   telegram "espanol" "English"                 a Telegram
+# Si solo hay un texto (una URL, un nombre de canal...), se usa ese siempre.
+# Para anadir un mensaje nuevo, escribirlo siempre en los dos idiomas.
+
+# ============================================================
+
+en_ingles() { [ "$IDIOMA" = "en" ]; }
+t() { if en_ingles && [ $# -ge 2 ]; then printf '%s' "$2"; else printf '%s' "$1"; fi; }
+decir() { if en_ingles && [ $# -ge 2 ]; then printf '%s\n' "$2"; else printf '%s\n' "$1"; fi; }
+
+# Respuesta afirmativa a una pregunta s/n (o y/n): vale en los dos idiomas.
+es_si() {
+	case "$1" in
+		s|S|si|SI|Si|sí|Sí|SÍ|y|Y|yes|YES|Yes) return 0 ;;
+	esac
+	return 1
+}
 
 # Lee $CONF. Deja en CONF_AVISOS las lineas que no entiende (para el log).
+# Al terminar, un IDIOMA que no sea "es" ni "en" se cambia por "es".
 leer_conf() {
 	CONF_AVISOS=""
+	CONF_AVISOS_EN=""
 	[ -f "$CONF" ] || return 1
 	n=0
 	while IFS= read -r linea || [ -n "$linea" ]; do
@@ -120,7 +155,7 @@ leer_conf() {
 		esac
 		case "$linea" in
 			*=*) ;;
-			*) CONF_AVISOS="$CONF_AVISOS linea $n sin '=';"; continue ;;
+			*) CONF_AVISOS="$CONF_AVISOS linea $n sin '=';"; CONF_AVISOS_EN="$CONF_AVISOS_EN line $n without '=';"; continue ;;
 		esac
 		clave="${linea%%=*}"
 		clave="${clave//[[:space:]]/}"
@@ -135,9 +170,17 @@ leer_conf() {
 		esac
 		case " $CLAVES_CONF " in
 			*" $clave "*) printf -v "$clave" '%s' "$valor" ;;
-			*) CONF_AVISOS="$CONF_AVISOS linea $n: clave desconocida '$clave';" ;;
+			*) CONF_AVISOS="$CONF_AVISOS linea $n: clave desconocida '$clave';"; CONF_AVISOS_EN="$CONF_AVISOS_EN line $n: unknown key '$clave';" ;;
 		esac
 	done < "$CONF"
+	case "$IDIOMA" in
+		es|en) ;;
+		*)
+			CONF_AVISOS="$CONF_AVISOS IDIOMA='$IDIOMA' no es es ni en, se usa es;"
+			CONF_AVISOS_EN="$CONF_AVISOS_EN IDIOMA='$IDIOMA' is neither es nor en, using es;"
+			IDIOMA="es"
+			;;
+	esac
 	return 0
 }
 
@@ -168,7 +211,7 @@ url_lista_local() {
 # Para el log y la pantalla: solo esquema, host y puerto (la ruta lleva el
 # codigo de acceso de ghostreamy).
 url_lista_segura() {
-	printf '%s\n' "$1" | sed -E 's#^(https?://[^/]+)/.*#\1/... (ruta oculta)#'
+	printf '%s\n' "$1" | sed -E "s#^(https?://[^/]+)/.*#\\1/... $(t '(ruta oculta)' '(path hidden)')#"
 }
 
 # descargar_lista URL FICHERO: descarga la lista y, si es una lista m3u con
@@ -181,14 +224,14 @@ descargar_lista() {
 	LISTA_CANALES=0
 	rm -f "$tmp"
 	if ! LISTA_ERROR=$(curl -fsS --max-time 30 -o "$tmp" "$url" 2>&1); then
-		LISTA_ERROR="no se ha podido descargar ($(printf '%s' "$LISTA_ERROR" | head -n 1))"
+		LISTA_ERROR="$(t 'no se ha podido descargar' 'could not download it') ($(printf '%s' "$LISTA_ERROR" | head -n 1))"
 		rm -f "$tmp"
 		return 1
 	fi
 	n_inf=$(grep -c '^#EXTINF' "$tmp" 2>/dev/null)
 	n_url=$(grep -cE '^https?://' "$tmp" 2>/dev/null)
 	if ! head -n 5 "$tmp" | grep -q '#EXTM3U' || [ "${n_inf:-0}" -eq 0 ] || [ "${n_url:-0}" -eq 0 ]; then
-		LISTA_ERROR="lo descargado no es una lista m3u con canales"
+		LISTA_ERROR=$(t "lo descargado no es una lista m3u con canales" "what was downloaded is not an m3u list with channels")
 		rm -f "$tmp"
 		return 1
 	fi
@@ -197,7 +240,7 @@ descargar_lista() {
 	mkdir -p "$(dirname "$destino")"
 	[ -f "$destino" ] && cp -p "$destino" "$destino.anterior"
 	if ! mv "$tmp" "$destino"; then
-		LISTA_ERROR="no se puede escribir $destino"
+		LISTA_ERROR=$(t "no se puede escribir $destino" "cannot write $destino")
 		rm -f "$tmp"
 		return 1
 	fi
@@ -209,8 +252,10 @@ guardar_conf() {
 	(
 		umask 077
 		{
-			echo "# Configuracion de BOTikor (ver botikor.conf.ejemplo). Generado el $(date '+%d/%m/%Y %H:%M')."
-			echo "# Formato CLAVE=valor, sin comillas. Contiene el token del bot: no compartir."
+			decir "# Configuracion de BOTikor (ver botikor.conf.ejemplo). Generado el $(date '+%d/%m/%Y %H:%M')." \
+				"# BOTikor configuration (see botikor.conf.ejemplo). Created on $(date '+%Y-%m-%d %H:%M')."
+			decir "# Formato CLAVE=valor, sin comillas. Contiene el token del bot: no compartir." \
+				"# Format KEY=value, no quotes. It contains the bot token: do not share it."
 			for clave in $CLAVES_CONF; do
 				printf '%s=%s\n' "$clave" "${!clave}"
 			done
@@ -222,7 +267,8 @@ guardar_conf() {
 # cancela, en vez de repetir la pregunta sin fin.
 leer_cancelado() {
 	echo
-	echo "Entrada cerrada: configuracion cancelada, no se ha guardado nada."
+	decir "Entrada cerrada: configuracion cancelada, no se ha guardado nada." \
+		"Input closed: setup cancelled, nothing has been saved."
 	exit 1
 }
 leer() { read -r "$@" || leer_cancelado; }
@@ -245,14 +291,34 @@ preguntar() {
 # la persona en la terminal.
 configuracion_inicial() {
 	local api nombre_bot respuesta datos ultimo intentos chat nombre tipo
-	local codigo detectado n_canales tok url url_local
+	local codigo detectado n_canales tok url url_local defecto
 
 	echo
 	echo "=============================================="
-	echo " BOTikor v$VERSION - configuracion"
+	echo " BOTikor v$VERSION"
 	echo "=============================================="
-	echo "Se guardara en $(pwd)/$CONF (solo lo puede leer root)."
-	echo "Pulsa Intro para aceptar el valor entre corchetes. Ctrl+C cancela."
+
+	# 0. Idioma. Es lo primero, para que todo lo demas salga ya en el elegido.
+	# Por defecto, el que ya hubiera (espanol si es una instalacion nueva).
+	echo "Idioma / Language:"
+	echo "    1) Espanol"
+	echo "    2) English"
+	if en_ingles; then defecto=2; else defecto=1; fi
+	while :; do
+		leer -p "Elige / Choose [$defecto]: " respuesta
+		case "${respuesta:-$defecto}" in
+			1|es|ES|Es) IDIOMA="es"; break ;;
+			2|en|EN|En) IDIOMA="en"; break ;;
+			*) echo "    Escribe 1 o 2 / Type 1 or 2" ;;
+		esac
+	done
+
+	echo
+	decir "CONFIGURACION" "SETUP"
+	decir "Se guardara en $(pwd)/$CONF (solo lo puede leer root)." \
+		"It will be saved in $(pwd)/$CONF (only root can read it)."
+	decir "Pulsa Intro para aceptar el valor entre corchetes. Ctrl+C cancela." \
+		"Press Enter to accept the value in brackets. Ctrl+C cancels."
 
 	# Otro botikor en marcha se "comeria" los mensajes de Telegram.
 	# "sh .../botikor.sh": el bot en marcha, no un editor con el fichero abierto.
@@ -262,28 +328,34 @@ configuracion_inicial() {
 		# PID que no siguen vivos.
 		if [ "$p" != "$$" ] && kill -0 "$p" 2>/dev/null; then
 			echo
-			echo "Hay otro BOTikor en marcha (PID $p). Paralo antes de configurar"
-			echo "(por ejemplo: /etc/init.d/botikor stop) y vuelve a lanzar este comando."
+			decir "Hay otro BOTikor en marcha (PID $p). Paralo antes de configurar" \
+				"Another BOTikor is running (PID $p). Stop it before setting up"
+			decir "(por ejemplo: /etc/init.d/botikor stop) y vuelve a lanzar este comando." \
+				"(for example: /etc/init.d/botikor stop) and run this command again."
 			return 1
 		fi
 	done
 
 	# 1. Token
 	echo
-	echo "1/5 TOKEN DEL BOT"
-	echo "    Te lo da @BotFather en Telegram al crear el bot (/newbot)."
+	decir "1/5 TOKEN DEL BOT" "1/5 BOT TOKEN"
+	decir "    Te lo da @BotFather en Telegram al crear el bot (/newbot)." \
+		"    @BotFather gives it to you in Telegram when you create the bot (/newbot)."
 	while :; do
 		if [ -n "$TOKEN" ]; then
-			leer -s -p "    Token (no se ve al escribirlo) [Intro = mantener el actual, ${TOKEN%%:*}:...]: " tok
+			leer -s -p "$(t "    Token (no se ve al escribirlo) [Intro = mantener el actual, ${TOKEN%%:*}:...]: " \
+				"    Token (hidden while you type) [Enter = keep the current one, ${TOKEN%%:*}:...]: ")" tok
 			echo
 			tok="${tok:-$TOKEN}"
 		else
-			leer -s -p "    Token (no se ve al escribirlo; pegalo y pulsa Intro): " tok
+			leer -s -p "$(t "    Token (no se ve al escribirlo; pegalo y pulsa Intro): " \
+				"    Token (hidden while you type; paste it and press Enter): ")" tok
 			echo
 		fi
 		tok="${tok//[[:space:]]/}"
 		if ! token_valido "$tok"; then
-			echo "    Eso no parece un token (es algo como 123456789:ABCdef...). Prueba otra vez."
+			decir "    Eso no parece un token (es algo como 123456789:ABCdef...). Prueba otra vez." \
+				"    That does not look like a token (it is something like 123456789:ABCdef...). Try again."
 			continue
 		fi
 		api="https://api.telegram.org/bot$tok"
@@ -295,22 +367,27 @@ try:
 except Exception:
     pass' 2>/dev/null)
 		if [ -n "$nombre_bot" ]; then
-			echo "    Correcto: el bot es @$nombre_bot"
+			decir "    Correcto: el bot es @$nombre_bot" "    OK: the bot is @$nombre_bot"
 			TOKEN="$tok"
 			break
 		fi
-		echo "    Telegram no acepta ese token (o no hay conexion a Internet). Prueba otra vez."
+		decir "    Telegram no acepta ese token (o no hay conexion a Internet). Prueba otra vez." \
+			"    Telegram does not accept that token (or there is no Internet connection). Try again."
 	done
 
 	# 2. ID del chat
 	echo
-	echo "2/5 TU CHAT"
-	echo "    El bot solo obedecera a un chat. Para saber cual es el tuyo:"
-	echo "    abre Telegram y escribe cualquier cosa a @$nombre_bot (por ejemplo: hola)."
+	decir "2/5 TU CHAT" "2/5 YOUR CHAT"
+	decir "    El bot solo obedecera a un chat. Para saber cual es el tuyo:" \
+		"    The bot will only obey one chat. To find out which one is yours:"
+	decir "    abre Telegram y escribe cualquier cosa a @$nombre_bot (por ejemplo: hola)." \
+		"    open Telegram and send anything to @$nombre_bot (for example: hello)."
 	if [ -n "$ID" ]; then
-		echo "    (Ahora mismo el autorizado es el $ID. Escribe 'mantener' para no cambiarlo.)"
+		decir "    (Ahora mismo el autorizado es el $ID. Escribe 'mantener' para no cambiarlo.)" \
+			"    (The authorized one right now is $ID. Type 'keep' to leave it as it is.)"
 	fi
-	echo "    Espero hasta 2 minutos. Si prefieres escribir el ID a mano, pulsa Intro."
+	decir "    Espero hasta 2 minutos. Si prefieres escribir el ID a mano, pulsa Intro." \
+		"    I will wait up to 2 minutes. If you prefer to type the ID yourself, press Enter."
 
 	# Se descarta lo que hubiera pendiente: solo cuenta un mensaje nuevo.
 	ultimo=$(curl -s --max-time 15 "$api/getUpdates?offset=-1" | python3 -c '
@@ -330,7 +407,9 @@ except Exception:
 		read -r -t 1 respuesta
 		rc_read=$?
 		if [ $rc_read -eq 0 ]; then
-			[ "$respuesta" = "mantener" ] && [ -n "$ID" ] && chat="$ID"
+			case "$respuesta" in
+				mantener|keep) [ -n "$ID" ] && chat="$ID" ;;
+			esac
 			break
 		elif [ $rc_read -le 128 ]; then
 			leer_cancelado
@@ -356,24 +435,24 @@ for u in d.get("result", []):
     break' 2>/dev/null)
 		case "$datos" in
 			ERROR*)
-				echo "    Telegram dice: ${datos#ERROR?}"
-				echo "    (Si el bot tiene un webhook o hay otro programa usando este token, no puedo leer los mensajes.)"
+				decir "    Telegram dice: ${datos#ERROR?}" "    Telegram says: ${datos#ERROR?}"
+				decir "    (Si el bot tiene un webhook o hay otro programa usando este token, no puedo leer los mensajes.)" \
+					"    (If the bot has a webhook or another program is using this token, I cannot read the messages.)"
 				break
 				;;
 			?*)
 				IFS=$'\t' read -r ultimo chat tipo nombre <<< "$datos"
-				echo "    Mensaje recibido de: $nombre (chat $chat, tipo $tipo)"
-				leer -p "    Es tu chat? (s/n) [s]: " respuesta
-				case "${respuesta:-s}" in
-					s|S|si|SI|Si) ;;
-					*) chat="" ;;
-				esac
+				decir "    Mensaje recibido de: $nombre (chat $chat, tipo $tipo)" \
+					"    Message received from: $nombre (chat $chat, type $tipo)"
+				leer -p "$(t "    Es tu chat? (s/n) [s]: " "    Is this your chat? (y/n) [y]: ")" respuesta
+				es_si "${respuesta:-s}" || chat=""
 				;;
 		esac
 	done
 
 	while ! id_valido "$chat"; do
-		preguntar chat "    ID del chat (un numero; te lo da tambien @userinfobot)" "$ID"
+		preguntar chat "$(t "    ID del chat (un numero; te lo da tambien @userinfobot)" \
+			"    Chat ID (a number; @userinfobot also tells you)")" "$ID"
 	done
 	ID="$chat"
 	# El mensaje de prueba ya esta leido: que el bot no lo conteste al arrancar.
@@ -381,115 +460,146 @@ for u in d.get("result", []):
 
 	# 3. OpenWebIF
 	echo
-	echo "3/5 OPENWEBIF (la web del deco; el bot la usa para encender, apagar y ver streams)"
+	decir "3/5 OPENWEBIF (la web del deco; el bot la usa para encender, apagar y ver streams)" \
+		"3/5 OPENWEBIF (the box's web interface; the bot uses it to power on, power off and see streams)"
 	while :; do
-		preguntar WEBIF "    Direccion" "$WEBIF"
+		preguntar WEBIF "$(t "    Direccion" "    Address")" "$WEBIF"
 		WEBIF_AUTH=()
 		[ -n "$WEBIF_USUARIO" ] && WEBIF_AUTH=(-u "$WEBIF_USUARIO:$WEBIF_CLAVE")
 		codigo=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "${WEBIF_AUTH[@]}" "$WEBIF/api/statusinfo")
 		case "$codigo" in
 			200)
-				echo "    Correcto: OpenWebIF responde."
+				decir "    Correcto: OpenWebIF responde." "    OK: OpenWebIF answers."
 				break
 				;;
 			401)
-				echo "    OpenWebIF pide usuario y contrasena."
-				preguntar WEBIF_USUARIO "    Usuario" "${WEBIF_USUARIO:-root}"
-				leer -s -p "    Contrasena (no se ve al escribir): " WEBIF_CLAVE
+				decir "    OpenWebIF pide usuario y contrasena." "    OpenWebIF asks for a user name and password."
+				preguntar WEBIF_USUARIO "$(t "    Usuario" "    User")" "${WEBIF_USUARIO:-root}"
+				leer -s -p "$(t "    Contrasena (no se ve al escribir): " "    Password (hidden while you type): ")" WEBIF_CLAVE
 				echo
 				;;
 			*)
-				echo "    No hay respuesta de OpenWebIF en $WEBIF (codigo ${codigo:-ninguno})."
-				leer -p "    Guardar de todas formas? (s/n) [n]: " respuesta
-				case "$respuesta" in s|S|si|SI|Si) break ;; esac
+				decir "    No hay respuesta de OpenWebIF en $WEBIF (codigo ${codigo:-ninguno})." \
+					"    No answer from OpenWebIF at $WEBIF (code ${codigo:-none})."
+				leer -p "$(t "    Guardar de todas formas? (s/n) [n]: " "    Save it anyway? (y/n) [n]: ")" respuesta
+				es_si "$respuesta" && break
 				;;
 		esac
 	done
 
 	# 4. Lista de canales
 	echo
-	echo "4/5 LISTA DE CANALES DE GHOSTREAMY"
-	echo "    En la web de ghostreamy entra en Listas y, en la lista que quieras usar,"
-	echo "    pulsa el boton \"m3u URL\": copia esa direccion y pegala aqui (da igual"
-	echo "    cual de las IPs). Con ella el bot descarga la lista el solo, ahora y cada"
-	echo "    vez que le envies /actualizar_canales. Esa direccion lleva tu codigo de"
-	echo "    ghostreamy: no la compartas."
-	echo "    Si prefieres copiar tu el fichero lista.m3u8 al deco, pulsa Intro."
+	decir "4/5 LISTA DE CANALES DE GHOSTREAMY" "4/5 GHOSTREAMY CHANNEL LIST"
+	if en_ingles; then
+		echo "    In the ghostreamy web page go to Lists and, on the list you want to use,"
+		echo "    press the \"m3u URL\" button: copy that address and paste it here (any"
+		echo "    of the IPs will do). With it the bot downloads the list by itself, now and"
+		echo "    every time you send it /update_channels. That address contains your"
+		echo "    ghostreamy code: do not share it."
+		echo "    If you prefer to copy the lista.m3u8 file to the box yourself, press Enter."
+	else
+		echo "    En la web de ghostreamy entra en Listas y, en la lista que quieras usar,"
+		echo "    pulsa el boton \"m3u URL\": copia esa direccion y pegala aqui (da igual"
+		echo "    cual de las IPs). Con ella el bot descarga la lista el solo, ahora y cada"
+		echo "    vez que le envies /actualizar_canales. Esa direccion lleva tu codigo de"
+		echo "    ghostreamy: no la compartas."
+		echo "    Si prefieres copiar tu el fichero lista.m3u8 al deco, pulsa Intro."
+	fi
 	while :; do
 		if [ -n "$GHOSTLIST_URL" ]; then
-			leer -p "    Direccion m3u [Intro = mantener la actual; 'ninguna' = usar fichero]: " url
+			leer -p "$(t "    Direccion m3u [Intro = mantener la actual; 'ninguna' = usar fichero]: " \
+				"    m3u address [Enter = keep the current one; 'none' = use a file]: ")" url
 			url="${url:-$GHOSTLIST_URL}"
 		else
-			leer -p "    Direccion m3u: " url
+			leer -p "$(t "    Direccion m3u: " "    m3u address: ")" url
 		fi
 		url="${url//[[:space:]]/}"
-		[ "$url" = "ninguna" ] && url=""
+		case "$url" in
+			ninguna|none) url="" ;;
+		esac
 		if [ -z "$url" ]; then
 			GHOSTLIST_URL=""
 			break
 		fi
 		if ! url_local=$(url_lista_local "$url"); then
-			echo "    Eso no parece una direccion (empieza por http://). Prueba otra vez."
+			decir "    Eso no parece una direccion (empieza por http://). Prueba otra vez." \
+				"    That does not look like an address (it starts with http://). Try again."
 			continue
 		fi
 		if descargar_lista "$url_local" "$GHOSTLIST"; then
-			echo "    Correcto: lista descargada, $LISTA_CANALES canales."
+			decir "    Correcto: lista descargada, $LISTA_CANALES canales." \
+				"    OK: list downloaded, $LISTA_CANALES channels."
 			GHOSTLIST_URL="$url_local"
 			break
 		fi
-		echo "    No funciona: $LISTA_ERROR."
+		decir "    No funciona: $LISTA_ERROR." "    It does not work: $LISTA_ERROR."
 		case "$url" in
-			https:*) echo "    Prueba con la direccion que empieza por http:// (sin s)." ;;
-			*) echo "    Esta ghostreamy en marcha? Has copiado la direccion m3u entera?" ;;
+			https:*) decir "    Prueba con la direccion que empieza por http:// (sin s)." \
+				"    Try the address that starts with http:// (without the s)." ;;
+			*) decir "    Esta ghostreamy en marcha? Has copiado la direccion m3u entera?" \
+				"    Is ghostreamy running? Did you copy the whole m3u address?" ;;
 		esac
 	done
 	if [ -z "$GHOSTLIST_URL" ]; then
-		preguntar GHOSTLIST "    Ruta del fichero" "$GHOSTLIST"
+		preguntar GHOSTLIST "$(t "    Ruta del fichero" "    File path")" "$GHOSTLIST"
 		if [ -f "$GHOSTLIST" ]; then
 			n_canales=$(grep -cE '^https?://' "$GHOSTLIST" 2>/dev/null)
 			detectado=$(detectar_puerto_ghost "$GHOSTLIST")
-			echo "    Encontrada: $n_canales URLs${detectado:+, puerto de ghostreamy $detectado}."
+			decir "    Encontrada: $n_canales URLs${detectado:+, puerto de ghostreamy $detectado}." \
+				"    Found: $n_canales URLs${detectado:+, ghostreamy port $detectado}."
 		else
-			echo "    Todavia no existe. El bot arrancara sin canales: cuando la tengas,"
-			echo "    copiala ahi y envia /actualizar_canales al bot."
+			decir "    Todavia no existe. El bot arrancara sin canales: cuando la tengas," \
+				"    It does not exist yet. The bot will start without channels: when you have it,"
+			decir "    copiala ahi y envia /actualizar_canales al bot." \
+				"    copy it there and send /update_channels to the bot."
 		fi
 	fi
 
 	# 5. Puertos de ghostreamy
 	echo
-	echo "5/5 PUERTOS DE GHOSTREAMY"
-	echo "    Interno: donde escucha ghostreamy en el deco. 'auto' lo saca de la lista."
-	preguntar GHOST_PORT_INT "    Puerto interno" "$GHOST_PORT_INT"
+	decir "5/5 PUERTOS DE GHOSTREAMY" "5/5 GHOSTREAMY PORTS"
+	decir "    Interno: donde escucha ghostreamy en el deco. 'auto' lo saca de la lista." \
+		"    Internal: where ghostreamy listens on the box. 'auto' takes it from the list."
+	preguntar GHOST_PORT_INT "$(t "    Puerto interno" "    Internal port")" "$GHOST_PORT_INT"
 	while [ "$GHOST_PORT_INT" != "auto" ] && ! es_puerto "$GHOST_PORT_INT"; do
-		preguntar GHOST_PORT_INT "    Tiene que ser un numero de 1 a 65535, o auto" "auto"
+		preguntar GHOST_PORT_INT "$(t "    Tiene que ser un numero de 1 a 65535, o auto" \
+			"    It must be a number from 1 to 65535, or auto")" "auto"
 	done
-	echo "    Externo: el que tu router abre hacia Internet y lleva al interno."
-	echo "    Solo lo usa /canal X para darte la URL de fuera de casa. Intro: el mismo que el interno."
-	preguntar GHOST_PORT_EXT "    Puerto externo" "$GHOST_PORT_EXT"
+	decir "    Externo: el que tu router abre hacia Internet y lleva al interno." \
+		"    External: the one your router opens to the Internet and forwards to the internal one."
+	decir "    Solo lo usa /canal X para darte la URL de fuera de casa. Intro: el mismo que el interno." \
+		"    Only /channel X uses it, to give you the URL for outside home. Enter: same as the internal one."
+	preguntar GHOST_PORT_EXT "$(t "    Puerto externo" "    External port")" "$GHOST_PORT_EXT"
 	while [ -n "$GHOST_PORT_EXT" ] && ! es_puerto "$GHOST_PORT_EXT"; do
-		preguntar GHOST_PORT_EXT "    Tiene que ser un numero de 1 a 65535 (o Intro)" ""
+		preguntar GHOST_PORT_EXT "$(t "    Tiene que ser un numero de 1 a 65535 (o Intro)" \
+			"    It must be a number from 1 to 65535 (or Enter)")" ""
 	done
 
 	# Carpeta de grabaciones: solo se pregunta si la de siempre no existe.
 	if [ ! -d "$GRABACIONES" ]; then
 		echo
-		echo "    GRABACIONES: el bot avisa cuando el deco empieza a grabar algo, mirando"
-		echo "    la carpeta donde graba. $GRABACIONES no existe en este deco."
-		preguntar GRABACIONES "    Carpeta de grabaciones" "$GRABACIONES"
-		[ -d "$GRABACIONES" ] || echo "    Tampoco existe ahora: se guarda igual (por si es un disco que aun no esta montado)."
+		decir "    GRABACIONES: el bot avisa cuando el deco empieza a grabar algo, mirando" \
+			"    RECORDINGS: the bot tells you when the box starts recording something, by watching"
+		decir "    la carpeta donde graba. $GRABACIONES no existe en este deco." \
+			"    the folder it records to. $GRABACIONES does not exist on this box."
+		preguntar GRABACIONES "$(t "    Carpeta de grabaciones" "    Recordings folder")" "$GRABACIONES"
+		[ -d "$GRABACIONES" ] || decir "    Tampoco existe ahora: se guarda igual (por si es un disco que aun no esta montado)." \
+			"    It does not exist either: it is saved anyway (in case it is a disk that is not mounted yet)."
 	fi
 
 	if ! guardar_conf; then
 		echo
-		echo "No he podido escribir $(pwd)/$CONF."
+		decir "No he podido escribir $(pwd)/$CONF." "I could not write $(pwd)/$CONF."
 		return 1
 	fi
 
 	echo
-	echo "Guardado en $(pwd)/$CONF:"
-	echo "    bot @$nombre_bot | chat $ID | OpenWebIF $WEBIF${WEBIF_USUARIO:+ (usuario $WEBIF_USUARIO)}"
-	echo "    lista $GHOSTLIST${GHOSTLIST_URL:+ (se descarga de ghostreamy)} | puertos ghostreamy ${GHOST_PORT_INT}->${GHOST_PORT_EXT:-(el mismo)}"
-	echo "    grabaciones en $GRABACIONES"
+	decir "Guardado en $(pwd)/$CONF:" "Saved in $(pwd)/$CONF:"
+	decir "    idioma espanol | bot @$nombre_bot | chat $ID | OpenWebIF $WEBIF${WEBIF_USUARIO:+ (usuario $WEBIF_USUARIO)}" \
+		"    language English | bot @$nombre_bot | chat $ID | OpenWebIF $WEBIF${WEBIF_USUARIO:+ (user $WEBIF_USUARIO)}"
+	decir "    lista $GHOSTLIST${GHOSTLIST_URL:+ (se descarga de ghostreamy)} | puertos ghostreamy ${GHOST_PORT_INT}->${GHOST_PORT_EXT:-(el mismo)}" \
+		"    list $GHOSTLIST${GHOSTLIST_URL:+ (downloaded from ghostreamy)} | ghostreamy ports ${GHOST_PORT_INT}->${GHOST_PORT_EXT:-(the same)}"
+	decir "    grabaciones en $GRABACIONES" "    recordings in $GRABACIONES"
 	return 0
 }
 
@@ -518,7 +628,17 @@ INIT_BOTIKOR="/etc/init.d/botikor"
 
 # Texto de $INIT_BOTIKOR. Para parar no se usa --retry de start-stop-daemon (el de
 # busybox no lo anuncia en su ayuda, aunque lo acepta): la espera se hace a mano.
+# Sus mensajes salen en el IDIOMA de la configuracion (se vuelve a crear al
+# instalar, asi que cambiar de idioma y repetir --instalar lo cambia tambien).
 script_arranque() {
+	local m_desc m_ya m_iniciando m_deteniendo m_en_marcha m_parado m_uso
+	m_desc=$(t "BOTikor, bot de Telegram para el deco" "BOTikor, Telegram bot for the box")
+	m_ya=$(t "BOTikor ya esta en marcha" "BOTikor is already running")
+	m_iniciando=$(t "Iniciando BOTikor..." "Starting BOTikor...")
+	m_deteniendo=$(t "Deteniendo BOTikor..." "Stopping BOTikor...")
+	m_en_marcha=$(t "BOTikor en marcha" "BOTikor running")
+	m_parado=$(t "BOTikor no esta en marcha" "BOTikor is not running")
+	m_uso=$(t "Uso" "Usage")
 	cat <<-EOF
 	#!/bin/sh
 	### BEGIN INIT INFO
@@ -527,9 +647,9 @@ script_arranque() {
 	# Required-Stop:
 	# Default-Start:     2 3 4 5
 	# Default-Stop:      0 1 6
-	# Short-Description: BOTikor, bot de Telegram para el deco
+	# Short-Description: $m_desc
 	### END INIT INFO
-	# Creado por BOTikor (botikor.sh --instalar lo vuelve a crear).
+	# Creado por BOTikor / Created by BOTikor (botikor.sh --instalar lo vuelve a crear / recreates it).
 
 	SCRIPT="$DESTINO_SCRIPT"
 	PIDFILE="/var/run/botikor.pid"
@@ -541,14 +661,14 @@ script_arranque() {
 	case "\$1" in
 	    start)
 	        if en_marcha; then
-	            echo "BOTikor ya esta en marcha (PID \$(cat "\$PIDFILE"))"
+	            echo "$m_ya (PID \$(cat "\$PIDFILE"))"
 	            exit 0
 	        fi
-	        echo "Iniciando BOTikor..."
+	        echo "$m_iniciando"
 	        start-stop-daemon -S -b -m -p "\$PIDFILE" -x "\$SCRIPT"
 	        ;;
 	    stop)
-	        echo "Deteniendo BOTikor..."
+	        echo "$m_deteniendo"
 	        if en_marcha; then
 	            kill "\$(cat "\$PIDFILE")"
 	            for i in 1 2 3 4 5 6 7 8 9 10; do
@@ -566,14 +686,14 @@ script_arranque() {
 	        ;;
 	    status)
 	        if en_marcha; then
-	            echo "BOTikor en marcha (PID \$(cat "\$PIDFILE"))"
+	            echo "$m_en_marcha (PID \$(cat "\$PIDFILE"))"
 	        else
-	            echo "BOTikor no esta en marcha"
+	            echo "$m_parado"
 	            exit 3
 	        fi
 	        ;;
 	    *)
-	        echo "Uso: \$0 {start|stop|restart|status}"
+	        echo "$m_uso: \$0 {start|stop|restart|status}"
 	        exit 1
 	        ;;
 	esac
@@ -586,27 +706,32 @@ instalar_arranque() {
 	local respuesta
 
 	echo
-	echo "INSTALACION"
-	echo "    Para que BOTikor arranque solo cada vez que se enciende el deco:"
-	[ "$SCRIPT_PATH" != "$DESTINO_SCRIPT" ] && echo "      - se copia a $DESTINO_SCRIPT"
-	echo "      - se crea $INIT_BOTIKOR y se activa en el arranque del deco"
-	echo "      - se pone en marcha ahora, en segundo plano"
+	decir "INSTALACION" "INSTALLATION"
+	decir "    Para que BOTikor arranque solo cada vez que se enciende el deco:" \
+		"    So that BOTikor starts by itself every time the box is switched on:"
+	[ "$SCRIPT_PATH" != "$DESTINO_SCRIPT" ] && decir "      - se copia a $DESTINO_SCRIPT" "      - it is copied to $DESTINO_SCRIPT"
+	decir "      - se crea $INIT_BOTIKOR y se activa en el arranque del deco" \
+		"      - $INIT_BOTIKOR is created and enabled at the box's startup"
+	decir "      - se pone en marcha ahora, en segundo plano" "      - it starts now, in the background"
 
+	# La marca "Creado por BOTikor" la llevan los init.d de cualquier version;
+	# no se traduce (es la forma de reconocerlos).
 	if [ -e "$INIT_BOTIKOR" ] && ! grep -q 'Creado por BOTikor' "$INIT_BOTIKOR" 2>/dev/null; then
-		echo "    Ya existe $INIT_BOTIKOR y no lo ha creado BOTikor: no lo toco."
-		echo "    El bot arranca ahora en esta terminal (Ctrl+C lo para)."
+		decir "    Ya existe $INIT_BOTIKOR y no lo ha creado BOTikor: no lo toco." \
+			"    $INIT_BOTIKOR already exists and was not created by BOTikor: I leave it alone."
+		decir "    El bot arranca ahora en esta terminal (Ctrl+C lo para)." \
+			"    The bot starts now in this terminal (Ctrl+C stops it)."
 		return 1
 	fi
 
-	leer -p "    Instalo? (s/n) [s]: " respuesta
-	case "${respuesta:-s}" in
-		s|S|si|SI|Si) ;;
-		*)
-			echo "    Sin instalar. El bot arranca ahora en esta terminal (Ctrl+C lo para)."
-			echo "    Para instalarlo mas tarde: $SCRIPT_PATH --instalar"
-			return 1
-			;;
-	esac
+	leer -p "$(t "    Instalo? (s/n) [s]: " "    Install it? (y/n) [y]: ")" respuesta
+	if ! es_si "${respuesta:-s}"; then
+		decir "    Sin instalar. El bot arranca ahora en esta terminal (Ctrl+C lo para)." \
+			"    Not installed. The bot starts now in this terminal (Ctrl+C stops it)."
+		decir "    Para instalarlo mas tarde: $SCRIPT_PATH --instalar" \
+			"    To install it later: $SCRIPT_PATH --install"
+		return 1
+	fi
 
 	# 1. El script, en su sitio (copia y mv: nunca queda a medio escribir).
 	if [ "$SCRIPT_PATH" != "$DESTINO_SCRIPT" ]; then
@@ -614,16 +739,16 @@ instalar_arranque() {
 		[ -f "$DESTINO_SCRIPT" ] && cp -p "$DESTINO_SCRIPT" "$DESTINO_SCRIPT.anterior"
 		if ! cp "$SCRIPT_PATH" "$DESTINO_SCRIPT.nuevo" || ! chmod 755 "$DESTINO_SCRIPT.nuevo" || ! mv "$DESTINO_SCRIPT.nuevo" "$DESTINO_SCRIPT"; then
 			rm -f "$DESTINO_SCRIPT.nuevo"
-			echo "    No he podido copiar el script a $DESTINO_SCRIPT."
+			decir "    No he podido copiar el script a $DESTINO_SCRIPT." "    I could not copy the script to $DESTINO_SCRIPT."
 			return 1
 		fi
-		echo "    Copiado a $DESTINO_SCRIPT"
+		decir "    Copiado a $DESTINO_SCRIPT" "    Copied to $DESTINO_SCRIPT"
 	fi
 
 	# 2. El arranque automatico.
 	if ! script_arranque > "$INIT_BOTIKOR.nuevo" || ! chmod 755 "$INIT_BOTIKOR.nuevo" || ! mv "$INIT_BOTIKOR.nuevo" "$INIT_BOTIKOR"; then
 		rm -f "$INIT_BOTIKOR.nuevo"
-		echo "    No he podido crear $INIT_BOTIKOR."
+		decir "    No he podido crear $INIT_BOTIKOR." "    I could not create $INIT_BOTIKOR."
 		return 1
 	fi
 
@@ -637,10 +762,12 @@ instalar_arranque() {
 	fi
 
 	if ls /etc/rc3.d/S*botikor >/dev/null 2>&1; then
-		echo "    Creado $INIT_BOTIKOR y activado en el arranque."
+		decir "    Creado $INIT_BOTIKOR y activado en el arranque." "    Created $INIT_BOTIKOR and enabled at startup."
 	else
-		echo "    Creado $INIT_BOTIKOR, pero no he podido activarlo en el arranque"
-		echo "    (no hay /etc/rc3.d). Tendras que hacerlo a mano."
+		decir "    Creado $INIT_BOTIKOR, pero no he podido activarlo en el arranque" \
+			"    Created $INIT_BOTIKOR, but I could not enable it at startup"
+		decir "    (no hay /etc/rc3.d). Tendras que hacerlo a mano." \
+			"    (there is no /etc/rc3.d). You will have to do it by hand."
 	fi
 	return 0
 }
@@ -652,32 +779,44 @@ iniciar_instalado() {
 	sleep 2
 	"$INIT_BOTIKOR" status
 	echo
-	echo "Listo. Ya puedes cerrar esta terminal: el bot sigue en marcha y"
-	echo "arrancara solo cada vez que se encienda el deco. Te ha escrito por"
-	echo "Telegram; prueba a enviarle /lista."
-	echo "    Parar / arrancar / reiniciar:  $INIT_BOTIKOR stop | start | restart"
-	echo "    Cambiar la configuracion:      $INIT_BOTIKOR stop; $DESTINO_SCRIPT --configurar"
-	echo "    Log:                           $(pwd)/$log"
+	if en_ingles; then
+		echo "Done. You can close this terminal now: the bot keeps running and"
+		echo "will start by itself every time the box is switched on. It has sent"
+		echo "you a Telegram message; try sending it /list."
+		echo "    Stop / start / restart:   $INIT_BOTIKOR stop | start | restart"
+		echo "    Change the settings:      $INIT_BOTIKOR stop; $DESTINO_SCRIPT --setup"
+		echo "    Log:                      $(pwd)/$log"
+	else
+		echo "Listo. Ya puedes cerrar esta terminal: el bot sigue en marcha y"
+		echo "arrancara solo cada vez que se encienda el deco. Te ha escrito por"
+		echo "Telegram; prueba a enviarle /lista."
+		echo "    Parar / arrancar / reiniciar:  $INIT_BOTIKOR stop | start | restart"
+		echo "    Cambiar la configuracion:      $INIT_BOTIKOR stop; $DESTINO_SCRIPT --configurar"
+		echo "    Log:                           $(pwd)/$log"
+	fi
 	echo
 }
 
 leer_conf
 
+# Opciones: --configurar (--setup) y --instalar (--install), en los dos idiomas.
 case "$1" in
-	--instalar)
+	--instalar|--install)
 		if [ ! -t 0 ]; then
-			echo "--instalar hace preguntas: lanzalo desde una terminal."
+			decir "--instalar hace preguntas: lanzalo desde una terminal." \
+				"--install asks questions: run it from a terminal."
 			exit 1
 		fi
 		if ! conf_completa; then
-			echo "Antes de instalar hay que configurar el bot: lanza $SCRIPT_PATH sin opciones."
+			decir "Antes de instalar hay que configurar el bot: lanza $SCRIPT_PATH sin opciones." \
+				"The bot has to be set up before installing it: run $SCRIPT_PATH without options."
 			exit 1
 		fi
 		instalar_arranque && iniciar_instalado
 		exit $?
 		;;
 	*)
-		if [ "$1" = "--configurar" ] || ! conf_completa; then
+		if [ "$1" = "--configurar" ] || [ "$1" = "--setup" ] || ! conf_completa; then
 			if [ -t 0 ]; then
 				configuracion_inicial || exit 1
 				leer_conf
@@ -726,7 +865,7 @@ contar_arranques() {
 # registrarlo en cuanto el log este redirigido (unas lineas mas abajo).
 recortar_log() {
 	if [ ! -f "$log" ]; then
-		RECORTE_INFO="no habia log previo, se crea uno nuevo"
+		RECORTE_INFO=$(t "no habia log previo, se crea uno nuevo" "there was no previous log, a new one is created")
 		return 0
 	fi
 
@@ -737,7 +876,8 @@ recortar_log() {
 	conservar=$((MAX_ARRANQUES - 1))
 
 	if [ "$total" -le "$conservar" ]; then
-		RECORTE_INFO="log con $total arranque(s) previo(s), no hace falta recortar (maximo $MAX_ARRANQUES)"
+		RECORTE_INFO=$(t "log con $total arranque(s) previo(s), no hace falta recortar (maximo $MAX_ARRANQUES)" \
+			"log with $total previous start(s), no need to trim (maximum $MAX_ARRANQUES)")
 		return 0
 	fi
 
@@ -752,10 +892,12 @@ recortar_log() {
 		}
 	' "$log" > "$log.tmp" 2>/dev/null && mv "$log.tmp" "$log"
 	then
-		RECORTE_INFO="log recortado: habia $total arranques previos, se han tirado $saltar y se conservan los $conservar mas recientes"
+		RECORTE_INFO=$(t "log recortado: habia $total arranques previos, se han tirado $saltar y se conservan los $conservar mas recientes" \
+			"log trimmed: there were $total previous starts, $saltar have been dropped and the $conservar most recent ones are kept")
 	else
 		rm -f "$log.tmp"
-		RECORTE_INFO="ATENCION: ha fallado el recorte del log, se deja tal cual estaba"
+		RECORTE_INFO=$(t "ATENCION: ha fallado el recorte del log, se deja tal cual estaba" \
+			"WARNING: trimming the log has failed, it is left as it was")
 	fi
 }
 
@@ -775,7 +917,8 @@ fecha=$(date +%a--%d/%m--%H:%M)
 # Cabecera de cada arranque. recortar_log() y contar_arranques() (mas arriba)
 # cuentan los arranques buscando lineas que empiezan por "BOTIKOR v" y por
 # "Started on ": si se cambia el texto de estas dos lineas hay que cambiar
-# tambien esos awk, o el recorte del log dejara de funcionar.
+# tambien esos awk, o el recorte del log dejara de funcionar. Por eso estas dos
+# lineas son iguales en los dos idiomas.
 printf "\nBOTIKOR v%s (version ghostreamy) by VkThor\n" "$VERSION"
 echo "Started on $fecha"
 
@@ -790,11 +933,15 @@ echo "Started on $fecha"
 # Norma: por aqui NUNCA pasa el TOKEN. Los mensajes de Telegram se
 # registran recortados a una linea, para no llenar el log con la lista
 # de canales entera.
+#
+# registrar "texto en espanol" "text in English": se escribe el del IDIOMA.
 
 # ============================================================
 
 registrar() {
-	printf '[%s] %s\n' "$(date '+%d/%m %H:%M:%S')" "$*"
+	local texto="$1"
+	en_ingles && [ $# -ge 2 ] && texto="$2"
+	printf '[%s] %s\n' "$(date '+%d/%m %H:%M:%S')" "$texto"
 }
 
 # Recorta un texto a una sola linea de como mucho 200 caracteres, para
@@ -803,8 +950,9 @@ resumir() {
 	printf '%s' "$1" | tr '\n\t' '  ' | cut -c1-200
 }
 
-registrar "Arranque de BOTikor v$VERSION | PID $$ | script $SCRIPT_PATH | directorio $(pwd)"
-registrar "Recorte del log: $RECORTE_INFO"
+registrar "Arranque de BOTikor v$VERSION | PID $$ | script $SCRIPT_PATH | directorio $(pwd) | idioma $IDIOMA" \
+	"BOTikor v$VERSION starting | PID $$ | script $SCRIPT_PATH | directory $(pwd) | language $IDIOMA"
+registrar "Recorte del log: $RECORTE_INFO" "Log trimming: $RECORTE_INFO"
 
 # GRABACIONES: ESTADO INICIAL
 # listagrabaciones guarda los nombres de las grabaciones (*.ts) que ya existian
@@ -833,7 +981,8 @@ done > listagrabaciones
 lastfile=$(ultima_grabacion)
 [ -n "$lastfile" ] && lastfile=$(nombre_grabacion "$lastfile")
 
-registrar "Grabaciones existentes en $GRABACIONES: $(grep -c . listagrabaciones 2>/dev/null) | ultima conocida: ${lastfile:-(ninguna)}"
+registrar "Grabaciones existentes en $GRABACIONES: $(grep -c . listagrabaciones 2>/dev/null) | ultima conocida: ${lastfile:-(ninguna)}" \
+	"Existing recordings in $GRABACIONES: $(grep -c . listagrabaciones 2>/dev/null) | last known: ${lastfile:-(none)}"
 
 # OFFSET: id del siguiente mensaje de Telegram que se pide (getUpdates?offset=N).
 # Telegram descarta lo anterior a N, asi que no hay que borrar nada. Se guarda
@@ -848,7 +997,8 @@ else
 fi
 OFFSET=${OFFSET:-0}
 
-registrar "Offset de Telegram al arrancar: $OFFSET (fichero ./$OFFSET_FILE)"
+registrar "Offset de Telegram al arrancar: $OFFSET (fichero ./$OFFSET_FILE)" \
+	"Telegram offset at startup: $OFFSET (file ./$OFFSET_FILE)"
 
 # ===================== CONFIGURACION EN USO =====================
 
@@ -857,14 +1007,17 @@ registrar "Offset de Telegram al arrancar: $OFFSET (fichero ./$OFFSET_FILE)"
 # derivados. Para cambiar algo se edita botikor.conf, no este bloque.
 
 if [ -n "$CONF_AVISOS" ]; then
-	registrar "ATENCION: en $CONF hay lineas que no se entienden y se ignoran:$CONF_AVISOS"
+	registrar "ATENCION: en $CONF hay lineas que no se entienden y se ignoran:$CONF_AVISOS" \
+		"WARNING: $CONF has lines that are not understood and are ignored:$CONF_AVISOS_EN"
 fi
 
 if ! conf_completa; then
 	if [ -f "$CONF" ]; then
-		registrar "ERROR: en $(pwd)/$CONF falta el TOKEN o el ID, o no son validos. Sin ellos el bot no puede funcionar. Para arreglarlo, lanza a mano desde una terminal: $SCRIPT_PATH --configurar"
+		registrar "ERROR: en $(pwd)/$CONF falta el TOKEN o el ID, o no son validos. Sin ellos el bot no puede funcionar. Para arreglarlo, lanza a mano desde una terminal: $SCRIPT_PATH --configurar" \
+			"ERROR: in $(pwd)/$CONF the TOKEN or the ID is missing or not valid. The bot cannot work without them. To fix it, run this by hand from a terminal: $SCRIPT_PATH --setup"
 	else
-		registrar "ERROR: no existe $(pwd)/$CONF. Para crearlo, lanza a mano desde una terminal: $SCRIPT_PATH"
+		registrar "ERROR: no existe $(pwd)/$CONF. Para crearlo, lanza a mano desde una terminal: $SCRIPT_PATH" \
+			"ERROR: $(pwd)/$CONF does not exist. To create it, run this by hand from a terminal: $SCRIPT_PATH"
 	fi
 	exit 1
 fi
@@ -873,13 +1026,15 @@ fi
 chmod 600 "$CONF" 2>/dev/null
 
 if ! es_puerto "$STREAMPORT_NATIVO"; then
-	registrar "ATENCION: STREAMPORT_NATIVO='$STREAMPORT_NATIVO' no es un puerto valido; se usa 8001"
+	registrar "ATENCION: STREAMPORT_NATIVO='$STREAMPORT_NATIVO' no es un puerto valido; se usa 8001" \
+		"WARNING: STREAMPORT_NATIVO='$STREAMPORT_NATIVO' is not a valid port; using 8001"
 	STREAMPORT_NATIVO=8001
 fi
 
 GRABACIONES="${GRABACIONES%/}"
 if [ ! -d "$GRABACIONES" ]; then
-	registrar "ATENCION: la carpeta de grabaciones $GRABACIONES no existe (o no esta montada): no se avisara de grabaciones hasta que aparezca"
+	registrar "ATENCION: la carpeta de grabaciones $GRABACIONES no existe (o no esta montada): no se avisara de grabaciones hasta que aparezca" \
+		"WARNING: the recordings folder $GRABACIONES does not exist (or is not mounted): there will be no recording alerts until it appears"
 fi
 
 # Usuario y contrasena de OpenWebIF como argumentos de curl. Es un array para
@@ -900,26 +1055,29 @@ fijar_puerto_ghost() {
 	local detectado origen
 	if es_puerto "$GHOST_PORT_CONF"; then
 		GHOST_PORT_INT="$GHOST_PORT_CONF"
-		origen="fijado en $CONF"
+		origen=$(t "fijado en $CONF" "set in $CONF")
 	else
-		[ "$GHOST_PORT_CONF" != "auto" ] && registrar "ATENCION: GHOST_PORT_INT='$GHOST_PORT_CONF' no es un puerto ni 'auto'; se detecta de la lista"
+		[ "$GHOST_PORT_CONF" != "auto" ] && registrar "ATENCION: GHOST_PORT_INT='$GHOST_PORT_CONF' no es un puerto ni 'auto'; se detecta de la lista" \
+			"WARNING: GHOST_PORT_INT='$GHOST_PORT_CONF' is neither a port nor 'auto'; it is detected from the list"
 		detectado=$(detectar_puerto_ghost "$GHOSTLIST")
 		if es_puerto "$detectado"; then
 			GHOST_PORT_INT="$detectado"
-			origen="detectado en las URLs de $GHOSTLIST"
+			origen=$(t "detectado en las URLs de $GHOSTLIST" "detected in the URLs of $GHOSTLIST")
 		else
 			GHOST_PORT_INT=3138
-			origen="no se ha podido detectar en $GHOSTLIST, se usa el de fabrica"
+			origen=$(t "no se ha podido detectar en $GHOSTLIST, se usa el de fabrica" "could not be detected in $GHOSTLIST, using the default one")
 		fi
 	fi
 	if es_puerto "$GHOST_PORT_EXT_CONF"; then
 		GHOST_PORT_EXT="$GHOST_PORT_EXT_CONF"
 	else
-		[ -n "$GHOST_PORT_EXT_CONF" ] && registrar "ATENCION: GHOST_PORT_EXT='$GHOST_PORT_EXT_CONF' no es un puerto valido; se usa el interno"
+		[ -n "$GHOST_PORT_EXT_CONF" ] && registrar "ATENCION: GHOST_PORT_EXT='$GHOST_PORT_EXT_CONF' no es un puerto valido; se usa el interno" \
+			"WARNING: GHOST_PORT_EXT='$GHOST_PORT_EXT_CONF' is not a valid port; using the internal one"
 		GHOST_PORT_EXT="$GHOST_PORT_INT"
 	fi
 	printf -v PUERTO_HEX_GHOST '%04X' "$GHOST_PORT_INT"
-	registrar "Puerto de ghostreamy: $GHOST_PORT_INT ($origen) | externo $GHOST_PORT_EXT"
+	registrar "Puerto de ghostreamy: $GHOST_PORT_INT ($origen) | externo $GHOST_PORT_EXT" \
+		"ghostreamy port: $GHOST_PORT_INT ($origen) | external $GHOST_PORT_EXT"
 }
 
 # Puertos en hexadecimal, tal como aparecen en /proc/net/tcp (printf -v no
@@ -956,7 +1114,8 @@ myip=""
 myip_ts=0
 IP_TTL=300
 
-registrar "Configuracion ($(pwd)/$CONF): TOKEN presente (${#TOKEN} caracteres, no se registra) | ID $ID | WEBIF $WEBIF${WEBIF_USUARIO:+ (usuario $WEBIF_USUARIO)} | lista $GHOSTLIST${GHOSTLIST_URL:+ (descarga: $(url_lista_segura "$GHOSTLIST_URL"))} | puertos ghostreamy $GHOST_PORT_INT->$GHOST_PORT_EXT | puerto nativo $STREAMPORT_NATIVO | grabaciones $GRABACIONES"
+registrar "Configuracion ($(pwd)/$CONF): TOKEN presente (${#TOKEN} caracteres, no se registra) | ID $ID | WEBIF $WEBIF${WEBIF_USUARIO:+ (usuario $WEBIF_USUARIO)} | lista $GHOSTLIST${GHOSTLIST_URL:+ (descarga: $(url_lista_segura "$GHOSTLIST_URL"))} | puertos ghostreamy $GHOST_PORT_INT->$GHOST_PORT_EXT | puerto nativo $STREAMPORT_NATIVO | grabaciones $GRABACIONES" \
+	"Settings ($(pwd)/$CONF): TOKEN present (${#TOKEN} characters, not logged) | ID $ID | WEBIF $WEBIF${WEBIF_USUARIO:+ (user $WEBIF_USUARIO)} | list $GHOSTLIST${GHOSTLIST_URL:+ (download: $(url_lista_segura "$GHOSTLIST_URL"))} | ghostreamy ports $GHOST_PORT_INT->$GHOST_PORT_EXT | native port $STREAMPORT_NATIVO | recordings $GRABACIONES"
 
 # ============================================================
 
@@ -964,9 +1123,10 @@ registrar "Configuracion ($(pwd)/$CONF): TOKEN presente (${#TOKEN} caracteres, n
 
 # ============================================================
 
-# telegram "texto": manda un mensaje de texto plano a $ID (puede ser de varias
-# lineas). Si Telegram no contesta ok se registra ATENCION, pero no se
-# reintenta ni se aborta nada. Para texto con formato ver telegram_html.
+# telegram "texto en espanol" "text in English": manda un mensaje de texto
+# plano a $ID (puede ser de varias lineas), en el IDIOMA de la configuracion.
+# Si Telegram no contesta ok se registra ATENCION, pero no se reintenta ni se
+# aborta nada. Para texto con formato ver telegram_html.
 # Quita la ruta de las direcciones web de un texto (deja esquema, host y
 # puerto). Las URLs de los canales de ghostreamy llevan el codigo de acceso del
 # usuario, y lo que se anota en el log no debe llevarlo (el log se envia con
@@ -976,16 +1136,20 @@ ocultar_rutas() {
 }
 
 telegram() {
-	respuesta_tg=$(curl -s --max-time 15 -X POST "$URL" -d "chat_id=$ID" --data-urlencode "text=$1" 2>&1)
+	local texto="$1"
+	en_ingles && [ $# -ge 2 ] && texto="$2"
+
+	respuesta_tg=$(curl -s --max-time 15 -X POST "$URL" -d "chat_id=$ID" --data-urlencode "text=$texto" 2>&1)
 
 	# Solo la primera linea del mensaje, para que "lista" no vuelque los
 	# 200 canales en el log.
-	resumen_tg=$(printf '%s' "$1" | head -n 1 | ocultar_rutas | cut -c1-120)
+	resumen_tg=$(printf '%s' "$texto" | head -n 1 | ocultar_rutas | cut -c1-120)
 
 	if printf '%s' "$respuesta_tg" | grep -q '"ok":true'; then
 		registrar "Telegram OK -> $resumen_tg"
 	else
-		registrar "ATENCION: Telegram NO ha aceptado el mensaje -> $resumen_tg | respuesta: $(resumir "$respuesta_tg")"
+		registrar "ATENCION: Telegram NO ha aceptado el mensaje -> $resumen_tg | respuesta: $(resumir "$respuesta_tg")" \
+			"WARNING: Telegram has NOT accepted the message -> $resumen_tg | answer: $(resumir "$respuesta_tg")"
 	fi
 }
 
@@ -1015,7 +1179,8 @@ telegram_html() {
 	if printf '%s' "$respuesta_tg" | grep -q '"ok":true'; then
 		registrar "Telegram OK (HTML) -> $resumen_tg"
 	else
-		registrar "ATENCION: Telegram NO ha aceptado el mensaje HTML -> $resumen_tg | respuesta: $(resumir "$respuesta_tg")"
+		registrar "ATENCION: Telegram NO ha aceptado el mensaje HTML -> $resumen_tg | respuesta: $(resumir "$respuesta_tg")" \
+			"WARNING: Telegram has NOT accepted the HTML message -> $resumen_tg | answer: $(resumir "$respuesta_tg")"
 	fi
 }
 
@@ -1035,17 +1200,19 @@ telegram_documento() {
 	nombre="$2"
 
 	if [ ! -s "$ruta" ]; then
-		registrar "ATENCION: '$ruta' no existe o esta vacio, no se envia"
-		telegram "El fichero '$ruta' no existe o esta vacio"
+		registrar "ATENCION: '$ruta' no existe o esta vacio, no se envia" "WARNING: '$ruta' does not exist or is empty, not sent"
+		telegram "El fichero '$ruta' no existe o está vacío" "The file '$ruta' does not exist or is empty"
 		return 1
 	fi
 
 	respuesta_tg=$(curl -s --max-time 30 -X POST "$URL_DOC" -F "chat_id=$ID" -F "document=@${ruta};filename=${nombre}" 2>&1)
 
 	if printf '%s' "$respuesta_tg" | grep -q '"ok":true'; then
-		registrar "Telegram OK -> enviado $ruta como $nombre ($(wc -c < "$ruta" 2>/dev/null) bytes)"
+		registrar "Telegram OK -> enviado $ruta como $nombre ($(wc -c < "$ruta" 2>/dev/null) bytes)" \
+			"Telegram OK -> sent $ruta as $nombre ($(wc -c < "$ruta" 2>/dev/null) bytes)"
 	else
-		registrar "ATENCION: Telegram NO ha aceptado el documento $ruta -> $(resumir "$respuesta_tg")"
+		registrar "ATENCION: Telegram NO ha aceptado el documento $ruta -> $(resumir "$respuesta_tg")" \
+			"WARNING: Telegram has NOT accepted the document $ruta -> $(resumir "$respuesta_tg")"
 	fi
 }
 
@@ -1063,7 +1230,7 @@ powerstate() {
 	estado="$1"
 	descripcion="$2"
 
-	registrar "Enviando a OpenWebIF powerstate=$estado ($descripcion)"
+	registrar "Enviando a OpenWebIF powerstate=$estado ($descripcion)" "Sending powerstate=$estado to OpenWebIF ($descripcion)"
 
 	respuesta_ws=$(curl -s -S -f --max-time 5 "${WEBIF_AUTH[@]}" "$WEBIF/api/powerstate?newstate=$estado" 2>&1)
 	rc_ws=$?
@@ -1071,7 +1238,8 @@ powerstate() {
 	if [ "$rc_ws" -eq 0 ]; then
 		registrar "OpenWebIF powerstate=$estado OK -> $(resumir "$respuesta_ws")"
 	else
-		registrar "ATENCION: OpenWebIF powerstate=$estado ha fallado (curl rc=$rc_ws) -> $(resumir "$respuesta_ws")"
+		registrar "ATENCION: OpenWebIF powerstate=$estado ha fallado (curl rc=$rc_ws) -> $(resumir "$respuesta_ws")" \
+			"WARNING: OpenWebIF powerstate=$estado has failed (curl rc=$rc_ws) -> $(resumir "$respuesta_ws")"
 	fi
 
 	return $rc_ws
@@ -1143,13 +1311,19 @@ parar_streams() {
 	CORTE_ERROR=""
 	RESTANTES=""
 
-	registrar "Cortando streams por RST en los puertos $STREAMPORT_NATIVO y $GHOST_PORT_INT"
+	registrar "Cortando streams por RST en los puertos $STREAMPORT_NATIVO y $GHOST_PORT_INT" \
+		"Cutting streams with RST on ports $STREAMPORT_NATIVO and $GHOST_PORT_INT"
 
-	resultado=$(python3 - "$STREAMPORT_NATIVO" "$GHOST_PORT_INT" 2>&1 <<-'PYEOF'
+	resultado=$(IDIOMA="$IDIOMA" python3 - "$STREAMPORT_NATIVO" "$GHOST_PORT_INT" 2>&1 <<-'PYEOF'
+	import os
 	import socket
 	import struct
 	import sys
 	import time
+
+	# Textos que acaban en Telegram (CORTE_ERROR), en el idioma del bot.
+	def T(es, en):
+	    return en if os.environ.get("IDIOMA") == "en" else es
 
 	PLAZO = 8.0       # segundos maximos intentando cortar
 	PAUSA_RST = 0.3   # minimo entre dos RST a la misma conexion
@@ -1271,7 +1445,7 @@ parar_streams() {
 
 	    inicial = leer_conexiones(puertos)
 	    if not inicial:
-	        extra = "IPv6 sin soporte: " + ", ".join(OMITIDAS_IPV6[:3]) if OMITIDAS_IPV6 else ""
+	        extra = T("IPv6 sin soporte: ", "IPv6 not supported: ") + ", ".join(OMITIDAS_IPV6[:3]) if OMITIDAS_IPV6 else ""
 	        print("0|0|0|0|||%s" % extra)
 	        return
 
@@ -1281,7 +1455,8 @@ parar_streams() {
 	        envio = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
 	        envio.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
 	    except OSError as e:
-	        print("%d|0|0|?|||no se pueden abrir sockets AF_PACKET/RAW (hace falta root): %s" % (len(inicial), e))
+	        print("%d|0|0|?|||%s: %s" % (len(inicial), T("no se pueden abrir sockets AF_PACKET/RAW (hace falta root)",
+	                                                     "AF_PACKET/RAW sockets cannot be opened (root is needed)"), e))
 	        return
 
 	    challenge_antes = challenge_acks()
@@ -1361,9 +1536,10 @@ parar_streams() {
 
 	    errores = []
 	    if OMITIDAS_IPV6:
-	        errores.append("IPv6 sin soporte: " + ", ".join(sorted(set(OMITIDAS_IPV6))[:3]))
+	        errores.append(T("IPv6 sin soporte: ", "IPv6 not supported: ") + ", ".join(sorted(set(OMITIDAS_IPV6))[:3]))
 	    if finales and rst_enviados == 0:
-	        errores.append("sin trafico visible de la conexion en %.0fs, no se pudo capturar el seq" % PLAZO)
+	        errores.append(T("sin trafico visible de la conexion en %.0fs, no se pudo capturar el seq",
+	                         "no traffic seen on the connection in %.0fs, the seq could not be captured") % PLAZO)
 	    resumen_error = "; ".join(errores)[:200].replace("|", "/").replace("\n", " ")
 
 	    print("%d|%d|%d|%s|%s|%s|%s" % (len(inicial), cortadas, rst_enviados, challenge,
@@ -1378,7 +1554,8 @@ parar_streams() {
 
 	if [ "$rc_python" -ne 0 ]; then
 		CORTE_ERROR=$(resumir "$resultado")
-		registrar "ATENCION: el script de corte ha fallado (rc=$rc_python) -> $CORTE_ERROR"
+		registrar "ATENCION: el script de corte ha fallado (rc=$rc_python) -> $CORTE_ERROR" \
+			"WARNING: the cutting script has failed (rc=$rc_python) -> $CORTE_ERROR"
 		return 2
 	fi
 
@@ -1401,7 +1578,8 @@ parar_streams() {
 	RESTANTES=$(cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | awk -v p1=":$(printf '%04X' "$STREAMPORT_NATIVO")" -v p2=":$(printf '%04X' "$GHOST_PORT_INT")" '$4 == "01" && ($2 ~ p1"$" || $2 ~ p2"$")' | grep -c .)
 	RESTANTES=${RESTANTES:-0}
 
-	registrar "Corte de streams: antes=${CORTE_ANTES:-?} conexiones_cortadas=${CORTE_CORTADAS:-?} clientes='${CORTE_CLIENTES}' rst=${CORTE_RST:-?} challenge_ack=${CORTE_CHALLENGE:-?} error='${CORTE_ERROR}' detalle=[${CORTE_DETALLE}] | conexiones en los puertos $STREAMPORT_NATIVO/$GHOST_PORT_INT tras 2s: $RESTANTES"
+	registrar "Corte de streams: antes=${CORTE_ANTES:-?} conexiones_cortadas=${CORTE_CORTADAS:-?} clientes='${CORTE_CLIENTES}' rst=${CORTE_RST:-?} challenge_ack=${CORTE_CHALLENGE:-?} error='${CORTE_ERROR}' detalle=[${CORTE_DETALLE}] | conexiones en los puertos $STREAMPORT_NATIVO/$GHOST_PORT_INT tras 2s: $RESTANTES" \
+		"Stream cut: before=${CORTE_ANTES:-?} connections_cut=${CORTE_CORTADAS:-?} clients='${CORTE_CLIENTES}' rst=${CORTE_RST:-?} challenge_ack=${CORTE_CHALLENGE:-?} error='${CORTE_ERROR}' detail=[${CORTE_DETALLE}] | connections on ports $STREAMPORT_NATIVO/$GHOST_PORT_INT after 2s: $RESTANTES"
 
 	return 0
 }
@@ -1445,12 +1623,13 @@ obtener_ip_publica() {
 	esac
 
 	if [ -z "$myip_nueva" ]; then
-		registrar "ATENCION: no se ha podido consultar la IP publica (ipinfo.io). Se mantiene la ultima conocida: ${myip:-(ninguna)}"
+		registrar "ATENCION: no se ha podido consultar la IP publica (ipinfo.io). Se mantiene la ultima conocida: ${myip:-(ninguna)}" \
+			"WARNING: the public IP could not be checked (ipinfo.io). Keeping the last known one: ${myip:-(none)}"
 		return 1
 	fi
 
 	if [ "$myip_nueva" != "$myip" ]; then
-		registrar "IP publica: ${myip:-(desconocida)} -> $myip_nueva"
+		registrar "IP publica: ${myip:-(desconocida)} -> $myip_nueva" "Public IP: ${myip:-(unknown)} -> $myip_nueva"
 		myip="$myip_nueva"
 	fi
 
@@ -1538,14 +1717,22 @@ duracion_txt() {
 # lista_activos: deja en LISTA_ACTIVOS el texto con los streams de $ESTADO.
 lista_activos() {
 	local l_tipo l_ip l_canal
-	LISTA_ACTIVOS="Streams activos:"
+	LISTA_ACTIVOS="$TXT_STREAMS_ACTIVOS"
 	# Campos: tipo, IP, puerto, canal, inicio (puerto e inicio no hacen falta aqui).
 	while IFS=$'\t' read -r l_tipo l_ip _ l_canal _; do
 		[ -n "$l_tipo" ] || continue
 		[ "$l_canal" = "-" ] && l_canal=""
-		LISTA_ACTIVOS="$LISTA_ACTIVOS$NL• $l_ip (vía $l_tipo)${l_canal:+ — $l_canal}"
+		[ "$l_tipo" = "directo" ] && l_tipo="$TXT_DIRECTO"
+		LISTA_ACTIVOS="$LISTA_ACTIVOS$NL• $l_ip ($TXT_VIA $l_tipo)${l_canal:+ — $l_canal}"
 	done <<< "$ESTADO"
 }
+
+# Textos fijos de los avisos de streams, calculados una sola vez (el bucle
+# principal no lanza ningun proceso para ellos). "directo" es el nombre interno
+# del tipo de stream y no cambia; solo cambia como se muestra.
+TXT_STREAMS_ACTIVOS=$(t "Streams activos:" "Active streams:")
+TXT_VIA=$(t "vía" "via")
+TXT_DIRECTO=$(t "directo" "direct")
 
 # decodificar_conexiones "RAW": convierte las lineas "puertoHEX ipHEX:puertoHEX"
 # que saca el awk del bucle en lineas "tipo ip puerto" (una por conexion real).
@@ -1761,10 +1948,12 @@ cargar_canales() {
 		cut -f1 canales.tsv > canalnombres
 		cut -f2 canales.tsv > canalurls
 		cut -f3 canales.tsv > canalurlstrans
-		registrar "Canales cargados desde $GHOSTLIST: $(grep -c . canalnombres 2>/dev/null)"
+		registrar "Canales cargados desde $GHOSTLIST: $(grep -c . canalnombres 2>/dev/null)" \
+			"Channels loaded from $GHOSTLIST: $(grep -c . canalnombres 2>/dev/null)"
 		return 0
 	else
-		registrar "ATENCION: no se han podido leer canales de $GHOSTLIST (no existe, esta vacio o tiene un formato inesperado)"
+		registrar "ATENCION: no se han podido leer canales de $GHOSTLIST (no existe, esta vacio o tiene un formato inesperado)" \
+			"WARNING: no channels could be read from $GHOSTLIST (it does not exist, is empty or has an unexpected format)"
 		return 1
 	fi
 }
@@ -1790,8 +1979,9 @@ cargar_canales() {
 # INSTALACION DE UN SCRIPT YA DESCARGADO (comun a "actualizar_botikor" y
 # "downgrade X")
 #
-# $1 = fichero descargado, $2 = version que contiene, $3 = verbo para el
-# aviso de Telegram ("Actualizando" / "Cambiando"). Valida sintaxis, guarda
+# $1 = fichero descargado, $2 = version que contiene, $3 y $4 = verbo para el
+# aviso de Telegram, en espanol y en ingles ("Actualizando" "Updating" /
+# "Cambiando" "Switching"). Valida sintaxis, guarda
 # copia de seguridad de la version actual en SCRIPT_PATH.anterior, instala y
 # relanza con exec. La configuracion no se toca: vive en botikor.conf. Si
 # algo falla no se toca el script instalado: borra el fichero descargado y
@@ -1802,34 +1992,39 @@ cargar_canales() {
 instalar_script_descargado() {
 	tmp="$1"
 	version_remota="$2"
-	verbo="$3"
+	verbo=$(t "$3" "$4")
 
 	if ! bash -n "$tmp" 2>/dev/null; then
-		registrar "ATENCION: el script descargado (v$version_remota) no pasa bash -n, no se instala"
-		telegram "El script descargado (v$version_remota) tiene errores de sintaxis, no lo instalo"
+		registrar "ATENCION: el script descargado (v$version_remota) no pasa bash -n, no se instala" \
+			"WARNING: the downloaded script (v$version_remota) does not pass bash -n, not installed"
+		telegram "El script descargado (v$version_remota) tiene errores de sintaxis, no lo instalo" \
+			"The downloaded script (v$version_remota) has syntax errors, I am not installing it"
 		rm -f "$tmp"
 		return 1
 	fi
 
 	if cp "$SCRIPT_PATH" "$SCRIPT_PATH.anterior" 2>/dev/null; then
-		registrar "Copia de seguridad de la v$VERSION en $SCRIPT_PATH.anterior"
+		registrar "Copia de seguridad de la v$VERSION en $SCRIPT_PATH.anterior" "Backup of v$VERSION in $SCRIPT_PATH.anterior"
 	else
-		registrar "ATENCION: no se ha podido guardar copia de seguridad de $SCRIPT_PATH"
+		registrar "ATENCION: no se ha podido guardar copia de seguridad de $SCRIPT_PATH" "WARNING: no backup of $SCRIPT_PATH could be saved"
 	fi
 
 	# Copia a un temporal junto al destino y mv: el script instalado nunca
 	# queda a medio escribir.
 	if ! cp "$tmp" "$SCRIPT_PATH.nuevo" || ! chmod +x "$SCRIPT_PATH.nuevo" || ! mv "$SCRIPT_PATH.nuevo" "$SCRIPT_PATH"; then
-		registrar "INSTALACION ABORTADA: no se puede escribir $SCRIPT_PATH"
-		telegram "No he podido instalar la v$version_remota (no se puede escribir $SCRIPT_PATH). Sigo en v$VERSION"
+		registrar "INSTALACION ABORTADA: no se puede escribir $SCRIPT_PATH" "INSTALLATION ABORTED: cannot write $SCRIPT_PATH"
+		telegram "No he podido instalar la v$version_remota (no se puede escribir $SCRIPT_PATH). Sigo en v$VERSION" \
+			"I could not install v$version_remota ($SCRIPT_PATH cannot be written). Staying on v$VERSION"
 		rm -f "$tmp" "$SCRIPT_PATH.nuevo"
 		return 1
 	fi
 	rm -f "$tmp"
 
-	registrar "Instalada v$version_remota en $SCRIPT_PATH. Relanzando con exec (mismo PID $$)"
+	registrar "Instalada v$version_remota en $SCRIPT_PATH. Relanzando con exec (mismo PID $$)" \
+		"Installed v$version_remota in $SCRIPT_PATH. Restarting with exec (same PID $$)"
 
-	telegram "$verbo BOTikor de v$VERSION a v$version_remota. Relanzando..."
+	telegram "$verbo BOTikor de v$VERSION a v$version_remota. Relanzando..." \
+		"$verbo BOTikor from v$VERSION to v$version_remota. Restarting..."
 
 	exec "$SCRIPT_PATH"
 }
@@ -1861,15 +2056,18 @@ descargar_verificado() {
 	rm -f "$destino" "$huella_tmp"
 
 	if ! error_curl=$(curl -fsSL --proto '=https' --proto-redir '=https' --max-time 30 -o "$destino" "$base/botikor.sh" 2>&1) || [ ! -s "$destino" ]; then
-		registrar "ATENCION: descarga fallida o fichero vacio ($base/botikor.sh) $(resumir "$error_curl")"
-		telegram "No se ha podido descargar el script ($base/botikor.sh)"
+		registrar "ATENCION: descarga fallida o fichero vacio ($base/botikor.sh) $(resumir "$error_curl")" \
+			"WARNING: download failed or empty file ($base/botikor.sh) $(resumir "$error_curl")"
+		telegram "No se ha podido descargar el script ($base/botikor.sh)" "The script could not be downloaded ($base/botikor.sh)"
 		rm -f "$destino"
 		return 1
 	fi
 
 	if ! error_curl=$(curl -fsSL --proto '=https' --proto-redir '=https' --max-time 15 -o "$huella_tmp" "$base/botikor.sh.sha256" 2>&1); then
-		registrar "ATENCION: descarga fallida de la huella ($base/botikor.sh.sha256) $(resumir "$error_curl")"
-		telegram "No se ha podido descargar la huella SHA-256 del script, así que no lo instalo"
+		registrar "ATENCION: descarga fallida de la huella ($base/botikor.sh.sha256) $(resumir "$error_curl")" \
+			"WARNING: download of the checksum failed ($base/botikor.sh.sha256) $(resumir "$error_curl")"
+		telegram "No se ha podido descargar la huella SHA-256 del script, así que no lo instalo" \
+			"The SHA-256 checksum of the script could not be downloaded, so I am not installing it"
 		rm -f "$destino" "$huella_tmp"
 		return 1
 	fi
@@ -1884,8 +2082,10 @@ descargar_verificado() {
 	esac
 
 	if [ ${#huella_publicada} -ne 64 ]; then
-		registrar "ATENCION: el fichero de huella no contiene un SHA-256 valido. No se instala"
-		telegram "La huella SHA-256 publicada no es válida, así que no instalo nada. Sigo en v$VERSION"
+		registrar "ATENCION: el fichero de huella no contiene un SHA-256 valido. No se instala" \
+			"WARNING: the checksum file does not contain a valid SHA-256. Not installed"
+		telegram "La huella SHA-256 publicada no es válida, así que no instalo nada. Sigo en v$VERSION" \
+			"The published SHA-256 checksum is not valid, so I am not installing anything. Staying on v$VERSION"
 		rm -f "$destino"
 		return 1
 	fi
@@ -1893,13 +2093,16 @@ descargar_verificado() {
 	huella_real=$(python3 -c 'import hashlib, sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$destino" 2>/dev/null)
 
 	if [ "$huella_real" != "$huella_publicada" ]; then
-		registrar "ATENCION: la huella no coincide (publicada $huella_publicada, descargada ${huella_real:-?}). No se instala"
-		telegram "El script descargado no coincide con su huella SHA-256 (descarga corrupta o alterada), así que no lo instalo. Sigo en v$VERSION"
+		registrar "ATENCION: la huella no coincide (publicada $huella_publicada, descargada ${huella_real:-?}). No se instala" \
+			"WARNING: the checksum does not match (published $huella_publicada, downloaded ${huella_real:-?}). Not installed"
+		telegram "El script descargado no coincide con su huella SHA-256 (descarga corrupta o alterada), así que no lo instalo. Sigo en v$VERSION" \
+			"The downloaded script does not match its SHA-256 checksum (corrupt or tampered download), so I am not installing it. Staying on v$VERSION"
 		rm -f "$destino"
 		return 1
 	fi
 
-	registrar "Descargados $(wc -c < "$destino" 2>/dev/null) bytes; huella SHA-256 correcta ($huella_real)"
+	registrar "Descargados $(wc -c < "$destino" 2>/dev/null) bytes; huella SHA-256 correcta ($huella_real)" \
+		"Downloaded $(wc -c < "$destino" 2>/dev/null) bytes; SHA-256 checksum correct ($huella_real)"
 	return 0
 }
 
@@ -1914,15 +2117,16 @@ actualizar_botikor() {
 	tmp="./botikor_nuevo.sh"
 	base="https://github.com/$REPO_GITHUB/releases/latest/download"
 
-	registrar "Actualizacion solicitada. Descargando la ultima version de $base"
+	registrar "Actualizacion solicitada. Descargando la ultima version de $base" "Update requested. Downloading the latest version from $base"
 
 	descargar_verificado "$base" "$tmp" || return 1
 
 	version_remota=$(version_de "$tmp")
 
 	if [ -z "$version_remota" ]; then
-		registrar "ATENCION: el fichero descargado no tiene una linea VERSION=\"X.Y.Z\" legible"
-		telegram "No se ha podido leer la versión del script remoto"
+		registrar "ATENCION: el fichero descargado no tiene una linea VERSION=\"X.Y.Z\" legible" \
+			"WARNING: the downloaded file has no readable VERSION=\"X.Y.Z\" line"
+		telegram "No se ha podido leer la versión del script remoto" "The version of the remote script could not be read"
 		rm -f "$tmp"
 		return 1
 	fi
@@ -1935,16 +2139,17 @@ actualizar_botikor() {
 		PYEOF
 	)
 
-	registrar "Version local v$VERSION, version remota v$version_remota"
+	registrar "Version local v$VERSION, version remota v$version_remota" "Local version v$VERSION, remote version v$version_remota"
 
 	if [ "$es_mas_nueva" != "1" ]; then
-		registrar "No se actualiza: la version remota no es mas nueva"
-		telegram "BOTikor ya está actualizado (v$VERSION, remota v$version_remota)"
+		registrar "No se actualiza: la version remota no es mas nueva" "Not updating: the remote version is not newer"
+		telegram "BOTikor ya está actualizado (v$VERSION, remota v$version_remota)" \
+			"BOTikor is already up to date (v$VERSION, remote v$version_remota)"
 		rm -f "$tmp"
 		return 0
 	fi
 
-	instalar_script_descargado "$tmp" "$version_remota" "Actualizando"
+	instalar_script_descargado "$tmp" "$version_remota" "Actualizando" "Updating"
 }
 
 # ============================================================
@@ -1973,11 +2178,13 @@ downgrade_botikor() {
 	tmp="./botikor_nuevo.sh"
 	api="https://api.github.com/repos/$REPO_GITHUB/releases?per_page=100"
 
-	registrar "Downgrade solicitado (parametro: '${numero_pedido}'). Consultando $api"
+	registrar "Downgrade solicitado (parametro: '${numero_pedido}'). Consultando $api" \
+		"Downgrade requested (parameter: '${numero_pedido}'). Querying $api"
 
 	if ! error_curl=$(curl -fsSL --proto '=https' --proto-redir '=https' --max-time 15 -H 'Accept: application/vnd.github+json' -o "$lista_tmp" "$api" 2>&1) || [ ! -s "$lista_tmp" ]; then
-		registrar "ATENCION: consulta fallida o respuesta vacia ($api) $(resumir "$error_curl")"
-		telegram "No se ha podido consultar la lista de versiones en GitHub"
+		registrar "ATENCION: consulta fallida o respuesta vacia ($api) $(resumir "$error_curl")" \
+			"WARNING: query failed or empty answer ($api) $(resumir "$error_curl")"
+		telegram "No se ha podido consultar la lista de versiones en GitHub" "The list of versions on GitHub could not be checked"
 		rm -f "$lista_tmp"
 		return 1
 	fi
@@ -2008,18 +2215,24 @@ downgrade_botikor() {
 	rm -f "$lista_tmp"
 
 	if [ "$rc_lista" -ne 0 ]; then
-		registrar "ATENCION: la respuesta de la API de GitHub no es una lista de releases (¿limite de consultas?)"
-		telegram "GitHub no ha devuelto la lista de versiones (quizá por el límite de consultas). Prueba dentro de un rato"
+		registrar "ATENCION: la respuesta de la API de GitHub no es una lista de releases (¿limite de consultas?)" \
+			"WARNING: the GitHub API answer is not a list of releases (rate limit?)"
+		telegram "GitHub no ha devuelto la lista de versiones (quizá por el límite de consultas). Prueba dentro de un rato" \
+			"GitHub has not returned the list of versions (maybe because of its rate limit). Try again in a while"
 		return 1
 	fi
 
-	disponibles=$(printf '%s\n' "$versiones" | awk 'NF { printf "%s%s", (n++ ? ", " : ""), $0 }')
+	# Con v delante, como las etiquetas de las releases: v1.0.1, v1.0.0
+	disponibles=$(printf '%s\n' "$versiones" | awk 'NF { printf "%sv%s", (n++ ? ", " : ""), $0 }')
 
 	case "$numero_pedido" in
 		""|"downgrade"|*[!0-9.vV]*)
-			registrar "Downgrade: parametro no valido '${numero_pedido}'. Disponibles: ${disponibles:-(ninguna)}"
-			telegram "Uso: downgrade X (por ejemplo: downgrade 1.0.0)
-Versiones disponibles: ${disponibles:-(ninguna)}"
+			registrar "Downgrade: parametro no valido '${numero_pedido}'. Disponibles: ${disponibles:-(ninguna)}" \
+				"Downgrade: invalid parameter '${numero_pedido}'. Available: ${disponibles:-(none)}"
+			telegram "Uso: downgrade X (por ejemplo: downgrade v1.0.0)
+Versiones disponibles: ${disponibles:-(ninguna)}" \
+				"Usage: downgrade X (for example: downgrade v1.0.0)
+Available versions: ${disponibles:-(none)}"
 			return 1
 			;;
 	esac
@@ -2032,42 +2245,49 @@ Versiones disponibles: ${disponibles:-(ninguna)}"
 	esac
 
 	if [ -z "$version_pedida" ]; then
-		registrar "Downgrade: la version '$numero_pedido' no esta publicada. Disponibles: ${disponibles:-(ninguna)}"
-		telegram "La versión $numero_pedido no existe online. Versiones disponibles: ${disponibles:-(ninguna)}"
+		registrar "Downgrade: la version '$numero_pedido' no esta publicada. Disponibles: ${disponibles:-(ninguna)}" \
+			"Downgrade: version '$numero_pedido' is not published. Available: ${disponibles:-(none)}"
+		telegram "La versión $numero_pedido no existe online. Versiones disponibles: ${disponibles:-(ninguna)}" \
+			"Version $numero_pedido does not exist online. Available versions: ${disponibles:-(none)}"
 		return 1
 	fi
 
 	case "$version_pedida" in
 		*$'\n'*)
-			registrar "Downgrade: '$numero_pedido' es ambiguo ($(printf '%s' "$version_pedida" | tr '\n' ' '))"
-			telegram "Hay varias versiones que encajan con $numero_pedido: $(printf '%s' "$version_pedida" | tr '\n' ' ')
-Escríbela con puntos, por ejemplo: downgrade $(printf '%s\n' "$version_pedida" | head -n 1)"
+			ambiguas=$(printf '%s\n' "$version_pedida" | awk 'NF { printf "%sv%s", (n++ ? " " : ""), $0 }')
+			registrar "Downgrade: '$numero_pedido' es ambiguo ($ambiguas)" "Downgrade: '$numero_pedido' is ambiguous ($ambiguas)"
+			telegram "Hay varias versiones que encajan con $numero_pedido: $ambiguas
+Escríbela con puntos, por ejemplo: downgrade v$(printf '%s\n' "$version_pedida" | head -n 1)" \
+				"Several versions match $numero_pedido: $ambiguas
+Write it with dots, for example: downgrade v$(printf '%s\n' "$version_pedida" | head -n 1)"
 			return 1
 			;;
 	esac
 
 	if [ "$version_pedida" = "$VERSION" ]; then
-		registrar "Downgrade: ya se esta en la v$VERSION, no se toca nada"
-		telegram "Ya estoy en la v$VERSION, no hay nada que cambiar"
+		registrar "Downgrade: ya se esta en la v$VERSION, no se toca nada" "Downgrade: already on v$VERSION, nothing is changed"
+		telegram "Ya estoy en la v$VERSION, no hay nada que cambiar" "I am already on v$VERSION, there is nothing to change"
 		return 0
 	fi
 
 	base="https://github.com/$REPO_GITHUB/releases/download/v$version_pedida"
 
-	registrar "Downgrade: version $version_pedida. Descargando de $base"
+	registrar "Downgrade: version v$version_pedida. Descargando de $base" "Downgrade: version v$version_pedida. Downloading from $base"
 
 	descargar_verificado "$base" "$tmp" || return 1
 
 	version_remota=$(version_de "$tmp")
 
 	if [ "$version_remota" != "$version_pedida" ]; then
-		registrar "ATENCION: se ha pedido la v$version_pedida pero el fichero descargado declara la v${version_remota:-?}. No se instala"
-		telegram "El fichero de la versión $version_pedida declara ser la v${version_remota:-?}, así que no lo instalo. Sigo en v$VERSION"
+		registrar "ATENCION: se ha pedido la v$version_pedida pero el fichero descargado declara la v${version_remota:-?}. No se instala" \
+			"WARNING: v$version_pedida was requested but the downloaded file declares v${version_remota:-?}. Not installed"
+		telegram "El fichero de la versión v$version_pedida declara ser la v${version_remota:-?}, así que no lo instalo. Sigo en v$VERSION" \
+			"The file of version v$version_pedida declares itself v${version_remota:-?}, so I am not installing it. Staying on v$VERSION"
 		rm -f "$tmp"
 		return 1
 	fi
 
-	instalar_script_descargado "$tmp" "$version_remota" "Cambiando"
+	instalar_script_descargado "$tmp" "$version_remota" "Cambiando" "Switching"
 }
 
 # ============================================================
@@ -2105,23 +2325,29 @@ OSCAM_VENTANA=300
 estado_oscam() {
 	local procesos
 	if [ -z "$OSCAM_LOG" ]; then
-		echo "OSCam: no se comprueba (OSCAM_LOG vacío en botikor.conf)"
+		decir "OSCam: no se comprueba (OSCAM_LOG vacío en botikor.conf)" "OSCam: not checked (OSCAM_LOG empty in botikor.conf)"
 		return 0
 	fi
 	procesos=$(pgrep oscam 2>/dev/null | grep -c .)
 	if [ ! -f "$OSCAM_LOG" ]; then
 		if [ "$procesos" -gt 0 ]; then
-			echo "OSCam: en marcha, pero no encuentro su log en $OSCAM_LOG (mira OSCAM_LOG en botikor.conf)"
+			decir "OSCam: en marcha, pero no encuentro su log en $OSCAM_LOG (mira OSCAM_LOG en botikor.conf)" \
+				"OSCam: running, but I cannot find its log at $OSCAM_LOG (check OSCAM_LOG in botikor.conf)"
 		else
-			echo "OSCam: NO está en marcha (no hay proceso ni log en $OSCAM_LOG)"
+			decir "OSCam: NO está en marcha (no hay proceso ni log en $OSCAM_LOG)" \
+				"OSCam: NOT running (no process and no log at $OSCAM_LOG)"
 		fi
 		return 0
 	fi
-	[ "$procesos" -gt 0 ] || echo "OSCam: ATENCIÓN, no veo el proceso de OSCam en marcha"
-	python3 - "$OSCAM_LOG" "$OSCAM_VENTANA" <<-'PYEOF' 2>/dev/null || echo "OSCam: no he podido leer $OSCAM_LOG"
+	[ "$procesos" -gt 0 ] || decir "OSCam: ATENCIÓN, no veo el proceso de OSCam en marcha" "OSCam: WARNING, I cannot see the OSCam process running"
+	python3 - "$OSCAM_LOG" "$OSCAM_VENTANA" "$IDIOMA" <<-'PYEOF' 2>/dev/null || decir "OSCam: no he podido leer $OSCAM_LOG" "OSCam: I could not read $OSCAM_LOG"
 		import os, re, sys, time
 
-		ruta, ventana = sys.argv[1], int(sys.argv[2])
+		ruta, ventana, idioma = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+
+		# Cada texto en los dos idiomas, como en el resto del bot.
+		def T(es, en):
+		    return en if idioma == "en" else es
 		with open(ruta, "rb") as f:
 		    f.seek(max(0, os.path.getsize(ruta) - 400000))
 		    texto = f.read().decode("utf-8", "replace")
@@ -2142,7 +2368,7 @@ estado_oscam() {
 		        continue
 		    lineas.append((t, l))
 		if not lineas:
-		    print("OSCam: el log está vacío")
+		    print(T("OSCam: el log está vacío", "OSCam: the log is empty"))
 		    sys.exit(0)
 		# Si el reloj del deco va por detras del log, manda el log.
 		ahora = max(ahora, lineas[-1][0])
@@ -2193,28 +2419,34 @@ estado_oscam() {
 
 		if total == 0:
 		    if ultimo:
-		        estado = "sin descifrar nada en los últimos %d min (último: %s por %s, hace %s)" % (minutos, ultimo[1], ultimo[2], hace(ultimo[0]))
+		        estado = T("sin descifrar nada en los últimos %d min (último: %s por %s, hace %s)",
+		                   "nothing decrypted in the last %d min (last one: %s by %s, %s ago)") % (minutos, ultimo[1], ultimo[2], hace(ultimo[0]))
 		    else:
-		        estado = "sin descifrar nada en el log"
+		        estado = T("sin descifrar nada en el log", "nothing decrypted in the log")
 		    if lectores_caidos or esperando:
-		        estado = "PROBLEMAS: " + estado
+		        estado = T("PROBLEMAS: ", "PROBLEMS: ") + estado
 		else:
 		    media = sum(tiempos) // len(tiempos) if tiempos else 0
-		    fallos_txt = "%d fallo%s" % (n_fallos, "" if n_fallos == 1 else "s")
+		    fallos_txt = T("%d fallo%s", "%d failure%s") % (n_fallos, "" if n_fallos == 1 else "s")
 		    detalle = ", ".join("%s %d" % (k, v) for k, v in sorted(fallos.items(), key=lambda x: -x[1]))
 		    if n_fallos == 0 and not lectores_caidos:
-		        estado = "bien (%d descifrados correctos en %d min, media %d ms)" % (ok, minutos, media)
+		        estado = T("bien (%d descifrados correctos en %d min, media %d ms)",
+		                   "fine (%d successful decryptions in %d min, average %d ms)") % (ok, minutos, media)
 		    elif ok / total >= 0.8 and ultimo and (ultimo[1] == "found" or ultimo[1].startswith("cache")) and not lectores_caidos:
-		        estado = "bien, con algún fallo (%d correctos y %s en %d min: %s)" % (ok, fallos_txt, minutos, detalle)
+		        estado = T("bien, con algún fallo (%d correctos y %s en %d min: %s)",
+		                   "fine, with some failures (%d successful and %s in %d min: %s)") % (ok, fallos_txt, minutos, detalle)
 		    else:
-		        estado = "PROBLEMAS (%d correctos y %s en %d min%s)" % (ok, fallos_txt, minutos, ": " + detalle if detalle else "")
+		        estado = T("PROBLEMAS (%d correctos y %s en %d min%s)",
+		                   "PROBLEMS (%d successful and %s in %d min%s)") % (ok, fallos_txt, minutos, ": " + detalle if detalle else "")
 		        if ultimo:
-		            estado += "; último: %s por %s, hace %s" % (ultimo[1], ultimo[2], hace(ultimo[0]))
+		            estado += T("; último: %s por %s, hace %s", "; last one: %s by %s, %s ago") % (ultimo[1], ultimo[2], hace(ultimo[0]))
 		print("OSCam: " + estado)
 		for r, (n, t) in sorted(lectores_caidos.items()):
-		    print("  Lector %s: no conecta (%d fallo%s de conexión en %d min, el último hace %s)" % (r, n, "" if n == 1 else "s", minutos, hace(t)))
+		    print(T("  Lector %s: no conecta (%d fallo%s de conexión en %d min, el último hace %s)",
+		            "  Reader %s: cannot connect (%d connection failure%s in %d min, the last one %s ago)") % (r, n, "" if n == 1 else "s", minutos, hace(t)))
 		if esperando:
-		    print("  El deco está esperando un lector que le dé las claves")
+		    print(T("  El deco está esperando un lector que le dé las claves",
+		            "  The box is waiting for a reader to give it the keys"))
 		PYEOF
 }
 
@@ -2224,24 +2456,28 @@ enviar_estado() {
 	ahora=$(segundos_encendido)
 	duracion_txt $(( ${ahora:-0} - ${INICIO_UPTIME:-0} ))
 	txt="BOTikor v$VERSION
-En marcha desde hace $DUR_TXT"
+$(t "En marcha desde hace $DUR_TXT" "Running for $DUR_TXT")"
 	duracion_txt "${ahora:-0}"
-	txt="$txt (deco encendido hace $DUR_TXT)"
+	txt="$txt $(t "(deco encendido hace $DUR_TXT)" "(box switched on $DUR_TXT ago)")"
 
 	# OpenWebIF: standby y canal que se esta viendo.
 	json=$(curl -s --max-time 5 "${WEBIF_AUTH[@]}" "$WEBIF/api/statusinfo" 2>/dev/null)
 	estado_webif=$(printf '%s' "$json" | python3 -c '
 import json, sys
+en = sys.argv[1] == "en"
 try:
     d = json.load(sys.stdin)
 except Exception:
     sys.exit(1)
 if str(d.get("inStandby", "")).lower() == "true":
-    print("responde (deco en standby)")
+    print("answers (box in standby)" if en else "responde (deco en standby)")
 else:
     c = d.get("currservice_name") or ""
-    print("responde (viendo %s)" % c if c else "responde")
-' 2>/dev/null) || estado_webif="NO responde en $WEBIF"
+    if c:
+        print(("answers (watching %s)" if en else "responde (viendo %s)") % c)
+    else:
+        print("answers" if en else "responde")
+' "$IDIOMA" 2>/dev/null) || estado_webif=$(t "NO responde en $WEBIF" "does NOT answer at $WEBIF")
 	txt="$txt
 OpenWebIF: $estado_webif"
 
@@ -2249,9 +2485,9 @@ OpenWebIF: $estado_webif"
 	codigo_ghost=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://127.0.0.1:$GHOST_PORT_INT/" 2>/dev/null)
 	case "$codigo_ghost" in
 		""|000) txt="$txt
-ghostreamy: NO responde en el puerto $GHOST_PORT_INT" ;;
+ghostreamy: $(t "NO responde en el puerto $GHOST_PORT_INT" "does NOT answer on port $GHOST_PORT_INT")" ;;
 		*) txt="$txt
-ghostreamy: responde en el puerto $GHOST_PORT_INT" ;;
+ghostreamy: $(t "responde en el puerto $GHOST_PORT_INT" "answers on port $GHOST_PORT_INT")" ;;
 	esac
 
 	# OSCam: si se esta descifrando bien (ver estado_oscam).
@@ -2261,19 +2497,20 @@ $(estado_oscam)"
 	# Canales y de donde salen.
 	n_can=$(grep -c . canalnombres 2>/dev/null)
 	if [ -n "$GHOSTLIST_URL" ]; then
-		origen="descargada de ghostreamy"
+		origen=$(t "descargada de ghostreamy" "downloaded from ghostreamy")
 	else
-		origen="fichero $GHOSTLIST"
+		origen=$(t "fichero $GHOSTLIST" "file $GHOSTLIST")
 	fi
-	fecha_lista=$(date -r "$GHOSTLIST" '+%d/%m %H:%M' 2>/dev/null)
+	fecha_lista=$(date -r "$GHOSTLIST" "+$(t '%d/%m %H:%M' '%b %d %H:%M')" 2>/dev/null)
 	txt="$txt
-Canales: ${n_can:-0} (lista $origen${fecha_lista:+, del $fecha_lista})
-Streams en curso: ${N_ESTADO:-0}"
+$(t "Canales: ${n_can:-0} (lista $origen${fecha_lista:+, del $fecha_lista})" \
+	"Channels: ${n_can:-0} (list $origen${fecha_lista:+, from $fecha_lista})")
+$(t "Streams en curso: ${N_ESTADO:-0}" "Streams in progress: ${N_ESTADO:-0}")"
 
 	# IP publica (la de "canal X").
 	obtener_ip_publica
 	txt="$txt
-IP pública: ${myip:-no se ha podido consultar}"
+$(t "IP pública: ${myip:-no se ha podido consultar}" "Public IP: ${myip:-could not be checked}")"
 
 	# Grabaciones: carpeta, cuantas hay y espacio libre.
 	if [ -d "$GRABACIONES" ]; then
@@ -2283,10 +2520,10 @@ IP pública: ${myip:-no se ha podido consultar}"
 		done
 		libre=$(df -k "$GRABACIONES" 2>/dev/null | awk 'END { if (NF >= 4) printf "%.1f GB", $(NF-2) / 1048576 }')
 		txt="$txt
-Grabaciones: $n_grab en $GRABACIONES${libre:+ (libres $libre)}"
+$(t "Grabaciones: $n_grab en $GRABACIONES${libre:+ (libres $libre)}" "Recordings: $n_grab in $GRABACIONES${libre:+ ($libre free)}")"
 	else
 		txt="$txt
-Grabaciones: la carpeta $GRABACIONES no existe"
+$(t "Grabaciones: la carpeta $GRABACIONES no existe" "Recordings: the folder $GRABACIONES does not exist")"
 	fi
 
 	telegram "$txt"
@@ -2303,10 +2540,12 @@ Grabaciones: la carpeta $GRABACIONES no existe"
 # el bot; para refrescarla esta actualizar_canales).
 if [ -n "$GHOSTLIST_URL" ] && [ ! -s "$GHOSTLIST" ]; then
 	if descargar_lista "$GHOSTLIST_URL" "$GHOSTLIST"; then
-		registrar "Lista de canales descargada de ghostreamy: $LISTA_CANALES canales"
+		registrar "Lista de canales descargada de ghostreamy: $LISTA_CANALES canales" \
+			"Channel list downloaded from ghostreamy: $LISTA_CANALES channels"
 		fijar_puerto_ghost
 	else
-		registrar "ATENCION: no se ha podido descargar la lista de ghostreamy: $LISTA_ERROR"
+		registrar "ATENCION: no se ha podido descargar la lista de ghostreamy: $LISTA_ERROR" \
+			"WARNING: the ghostreamy list could not be downloaded: $LISTA_ERROR"
 	fi
 fi
 cargar_canales
@@ -2349,24 +2588,40 @@ sincronizar_hora() {
 			PYEOF
 		)
 		if [ -n "$epoch" ]; then
-			registrar "Hora sincronizada por NTP en el intento $((intentos + 1)): $(date '+%d/%m/%Y %H:%M:%S')"
+			registrar "Hora sincronizada por NTP en el intento $((intentos + 1)): $(date '+%d/%m/%Y %H:%M:%S')" \
+				"Time synchronized by NTP on attempt $((intentos + 1)): $(date '+%Y-%m-%d %H:%M:%S')"
 			return 0
 		fi
 		intentos=$((intentos + 1))
-		registrar "NTP: intento $intentos sin respuesta, reintento en 5s"
+		registrar "NTP: intento $intentos sin respuesta, reintento en 5s" "NTP: attempt $intentos without answer, retrying in 5s"
 		sleep 5
 	done
-	registrar "ATENCION: no se ha podido sincronizar la hora tras $intentos intentos. La hora del deco puede estar mal"
+	registrar "ATENCION: no se ha podido sincronizar la hora tras $intentos intentos. La hora del deco puede estar mal" \
+		"WARNING: the time could not be synchronized after $intentos attempts. The box's clock may be wrong"
 	return 1
+}
+
+# Fecha del aviso de arranque, con el dia de la semana en el idioma del bot
+# (date +%a lo da segun el locale del deco, que suele ser ingles).
+fecha_arranque() {
+	local dias dia
+	if en_ingles; then
+		date +"%a %Y-%m-%d %H:%M:%S"
+	else
+		dias=(dom lun mar mié jue vie sáb)
+		dia=$(date +%w)
+		printf '%s %s\n' "${dias[${dia:-0}]}" "$(date +"%d/%m/%Y %H:%M:%S")"
+	fi
 }
 
 if sincronizar_hora
 then
-	fechainicio=$(date +"%a %d/%m/%Y %H:%M:%S")
-	telegram "BOTikor v$VERSION iniciado. $fechainicio"
+	fechainicio=$(fecha_arranque)
+	telegram "BOTikor v$VERSION iniciado. $fechainicio" "BOTikor v$VERSION started. $fechainicio"
 else
-	fechainicio=$(date +"%a %d/%m/%Y %H:%M:%S")
-	telegram "BOTikor v$VERSION iniciado (aviso: no se pudo sincronizar la hora por internet). $fechainicio"
+	fechainicio=$(fecha_arranque)
+	telegram "BOTikor v$VERSION iniciado (aviso: no se pudo sincronizar la hora por internet). $fechainicio" \
+		"BOTikor v$VERSION started (warning: the time could not be synchronized over the Internet). $fechainicio"
 fi
 
 # epoch_inicio: instante de arranque, tomado DESPUES de sincronizar la hora (si
@@ -2377,7 +2632,7 @@ epoch_inicio=$(date +%s)
 # IP publica: una sola consulta al arrancar (queda en cache y en el log).
 obtener_ip_publica
 
-registrar "Entrando en el bucle principal (sondeo a Telegram cada 5s)"
+registrar "Entrando en el bucle principal (sondeo a Telegram cada 5s)" "Entering the main loop (polling Telegram every 5s)"
 
 # ==========================================================================
 # BUCLE PRINCIPAL (un ciclo cada ~5 s)
@@ -2416,12 +2671,14 @@ if [ -z "$UPDATES" ] || [ -z "$NUM_UPDATES" ] || printf '%s' "$UPDATES" | grep -
 	fallos_red=$((fallos_red + 1))
 
 	if [ "$fallos_red" -eq 1 ] || [ $((fallos_red % 60)) -eq 0 ]; then
-		registrar "ATENCION: getUpdates sin respuesta valida (fallo consecutivo $fallos_red, curl rc=$rc_updates) -> $(resumir "$UPDATES")"
+		registrar "ATENCION: getUpdates sin respuesta valida (fallo consecutivo $fallos_red, curl rc=$rc_updates) -> $(resumir "$UPDATES")" \
+			"WARNING: getUpdates without a valid answer (consecutive failure $fallos_red, curl rc=$rc_updates) -> $(resumir "$UPDATES")"
 	fi
 
 elif [ "$fallos_red" -gt 0 ]; then
 
-	registrar "Conexion con Telegram recuperada tras $fallos_red ciclos fallidos"
+	registrar "Conexion con Telegram recuperada tras $fallos_red ciclos fallidos" \
+		"Connection with Telegram recovered after $fallos_red failed cycles"
 	fallos_red=0
 
 fi
@@ -2450,14 +2707,16 @@ then
 		# Solo aceptar mensajes de tu ID de Telegram
 
 		if [ "$CHAT_ID" != "$ID" ]; then
-			registrar "Mensaje IGNORADO (viene del chat ID $CHAT_ID, que no es el autorizado)"
+			registrar "Mensaje IGNORADO (viene del chat ID $CHAT_ID, que no es el autorizado)" \
+				"Message IGNORED (it comes from chat ID $CHAT_ID, which is not the authorized one)"
 			continue
 		fi
 
 
 		if [ "$MESSAGE" != "null" ]; then
 
-			registrar "Mensaje recibido: $(resumir "$MESSAGE") | offset guardado: $OFFSET"
+			registrar "Mensaje recibido: $(resumir "$MESSAGE") | offset guardado: $OFFSET" \
+				"Message received: $(resumir "$MESSAGE") | offset saved: $OFFSET"
 
 			# Troceado del mensaje: comando = primera palabra (con o sin "/" delante) y
 			# numero = segunda palabra (el parametro: numero de canal, version...).
@@ -2471,11 +2730,15 @@ then
 			numero=$(echo "$MESSAGE" | cut -d ' ' -f 2)
 
 
-			# DESPACHO DE COMANDOS. Para ANADIR uno:
-			#   1. Nueva rama aqui, con el nombre en minusculas y de UNA palabra (con _ si
-			#      hace falta: Telegram solo vuelve clicables letras, cifras y _).
-			#   2. Anadirlo al texto de ayuda de la rama final "*)".
-			#   3. registrar al entrar y telegram con el resultado.
+			# DESPACHO DE COMANDOS. Cada comando tiene un nombre en espanol y otro en
+			# ingles (lista|list, canal|channel...): se aceptan los dos sea cual sea el
+			# IDIOMA, y la ayuda y los mensajes muestran los del idioma elegido. Los
+			# nombres de cada idioma estan en ARQUITECTURA.md ("Comandos").
+			# Para ANADIR uno:
+			#   1. Nueva rama aqui, con sus dos nombres en minusculas y de UNA palabra
+			#      (con _ si hace falta: Telegram solo vuelve clicables letras, cifras y _).
+			#   2. Anadirlo a los dos textos de ayuda de la rama final "*)".
+			#   3. registrar al entrar y telegram con el resultado, en los dos idiomas.
 			#   4. Si es destructivo (apagar, reiniciar...), copiar la proteccion de 120 s
 			#      de apagar: evita que un mensaje viejo reentregado por Telegram actue.
 			#   5. Si lleva parametro, validar que sea numerico (ver canal y zap).
@@ -2487,14 +2750,15 @@ then
 				# canalnombres (la misma linea en canalurls y canalurlstrans) y es el que
 				# esperan canal y zap. Va en <pre> (telegram_html) para que las columnas
 				# alineen.
-				"lista")
+				"lista"|"list")
 
 					if [ ! -s canalnombres ]; then
-						registrar "Comando 'lista': no hay canales cargados"
-						telegram "No hay lista de canales cargada. Prueba /actualizar_canales"
+						registrar "Comando 'lista': no hay canales cargados" "Command 'list': no channels loaded"
+						telegram "No hay lista de canales cargada. Prueba /actualizar_canales" \
+							"No channel list loaded. Try /update_channels"
 					else
 						n_canales=$(grep -c . canalnombres)
-						registrar "Comando 'lista': enviando $n_canales canales"
+						registrar "Comando 'lista': enviando $n_canales canales" "Command 'list': sending $n_canales channels"
 
 						# Ancho fijo para el numero (2 en 1-99, 3 en 100-999...),
 						# asi la columna del nombre siempre empieza en la misma
@@ -2536,23 +2800,26 @@ then
 				;;
 
 
-				# actualizar_canales: vuelve a LEER lista.m3u8 (no la descarga: la regenera la
-				# persona desde ghostreamy, ver la documentación) y rehace canales.tsv y canal*. Si
-				# la lectura falla se conservan los ficheros de la carga anterior.
-				"actualizar_canales")
+				# actualizar_canales: con GHOSTLIST_URL descarga la lista de ghostreamy;
+				# despues vuelve a LEER lista.m3u8 y rehace canales.tsv y canal*. Si la
+				# descarga o la lectura fallan se conservan los ficheros de la carga anterior.
+				"actualizar_canales"|"update_channels")
 
-					registrar "Comando 'actualizar_canales'"
+					registrar "Comando 'actualizar_canales'" "Command 'update_channels'"
 
 					# Con GHOSTLIST_URL primero se descarga; si falla, se sigue con
 					# la lista que habia y no se recarga nada.
 					lista_ok=1
 					if [ -n "$GHOSTLIST_URL" ]; then
 						if descargar_lista "$GHOSTLIST_URL" "$GHOSTLIST"; then
-							registrar "Lista de canales descargada de ghostreamy: $LISTA_CANALES canales"
+							registrar "Lista de canales descargada de ghostreamy: $LISTA_CANALES canales" \
+								"Channel list downloaded from ghostreamy: $LISTA_CANALES channels"
 						else
 							lista_ok=0
-							registrar "ATENCION: no se ha podido descargar la lista de ghostreamy: $LISTA_ERROR"
-							telegram "No he podido descargar la lista de ghostreamy ($LISTA_ERROR). Sigo con la que tenía."
+							registrar "ATENCION: no se ha podido descargar la lista de ghostreamy: $LISTA_ERROR" \
+								"WARNING: the ghostreamy list could not be downloaded: $LISTA_ERROR"
+							telegram "No he podido descargar la lista de ghostreamy ($LISTA_ERROR). Sigo con la que tenía." \
+								"I could not download the ghostreamy list ($LISTA_ERROR). I keep the one I had."
 						fi
 					fi
 
@@ -2562,10 +2829,12 @@ then
 						# Con GHOST_PORT_INT=auto, la lista nueva manda.
 						puerto_antes="$GHOST_PORT_INT"
 						fijar_puerto_ghost
-						[ "$GHOST_PORT_INT" != "$puerto_antes" ] && registrar "ATENCION: el puerto de ghostreamy cambia de $puerto_antes a $GHOST_PORT_INT"
-						telegram "Lista de canales ${GHOSTLIST_URL:+descargada de ghostreamy y }recargada: $(grep -c . canalnombres 2>/dev/null) canales"
+						[ "$GHOST_PORT_INT" != "$puerto_antes" ] && registrar "ATENCION: el puerto de ghostreamy cambia de $puerto_antes a $GHOST_PORT_INT" \
+							"WARNING: the ghostreamy port changes from $puerto_antes to $GHOST_PORT_INT"
+						telegram "Lista de canales ${GHOSTLIST_URL:+descargada de ghostreamy y }recargada: $(grep -c . canalnombres 2>/dev/null) canales" \
+							"Channel list ${GHOSTLIST_URL:+downloaded from ghostreamy and }reloaded: $(grep -c . canalnombres 2>/dev/null) channels"
 					else
-						telegram "No se ha podido leer $GHOSTLIST"
+						telegram "No se ha podido leer $GHOSTLIST" "$GHOSTLIST could not be read"
 					fi
 
 				;;
@@ -2573,7 +2842,7 @@ then
 
 				# actualizar_botikor: ver actualizar_botikor(). Si hay una version mas nueva no
 				# vuelve de la funcion (exec).
-				"actualizar_botikor")
+				"actualizar_botikor"|"update_botikor")
 
 					actualizar_botikor
 
@@ -2584,14 +2853,16 @@ then
 				# trae) para abrirla fuera de casa (VLC, Kodi...). Cambia "IP-local:INT" por
 				# "IP-publica:EXT" (ver GHOST_PORT_EXT). Necesita la IP publica y el puerto
 				# abierto en el router.
-				"canal")
+				"canal"|"channel")
 
 					case "$numero" in
 
 						""|*[!0-9]*)
 
-							registrar "Comando 'canal': falta o no es valido el numero de canal ('$numero')"
-							telegram "Uso: canal X (por ejemplo: canal 3). Pide 'lista' para ver los números disponibles"
+							registrar "Comando 'canal': falta o no es valido el numero de canal ('$numero')" \
+								"Command 'channel': the channel number is missing or not valid ('$numero')"
+							telegram "Uso: canal X (por ejemplo: canal 3). Pide 'lista' para ver los números disponibles" \
+								"Usage: channel X (for example: channel 3). Send 'list' to see the available numbers"
 
 						;;
 
@@ -2603,30 +2874,34 @@ then
 
 							if [ -z "$urlbase" ]; then
 
-								registrar "Comando 'canal $numero': no existe ese numero"
-								telegram "No existe ese número de canal. Pide 'lista' para ver los disponibles"
+								registrar "Comando 'canal $numero': no existe ese numero" "Command 'channel $numero': that number does not exist"
+								telegram "No existe ese número de canal. Pide 'lista' para ver los disponibles" \
+									"That channel number does not exist. Send 'list' to see the available ones"
 
 							else
 
-								registrar "Comando 'canal $numero' -> $nombre (con transcodificada: $([ -n "$urltrans" ] && echo si || echo no))"
+								registrar "Comando 'canal $numero' -> $nombre (con transcodificada: $([ -n "$urltrans" ] && echo si || echo no))" \
+									"Command 'channel $numero' -> $nombre (with transcoded: $([ -n "$urltrans" ] && echo yes || echo no))"
 
 								obtener_ip_publica
 
 								if [ -z "$myip" ]; then
 
-									registrar "Comando 'canal $numero': sin IP publica, no se puede montar la URL"
-									telegram "Ahora mismo no consigo averiguar la IP pública, así que no puedo montar la URL de $nombre. Inténtalo de nuevo en un momento"
+									registrar "Comando 'canal $numero': sin IP publica, no se puede montar la URL" \
+										"Command 'channel $numero': no public IP, the URL cannot be built"
+									telegram "Ahora mismo no consigo averiguar la IP pública, así que no puedo montar la URL de $nombre. Inténtalo de nuevo en un momento" \
+										"I cannot find out the public IP right now, so I cannot build the URL of $nombre. Try again in a moment"
 
 								else
 
 									urlpublica=$(printf '%s' "$urlbase" | sed -E "s#://[0-9.]+:$GHOST_PORT_INT#://$myip:$GHOST_PORT_EXT#")
 
-									telegram "URL del canal $nombre:"
+									telegram "URL del canal $nombre:" "URL of channel $nombre:"
 									telegram "$urlpublica"
 
 									if [ -n "$urltrans" ]; then
 										urlpublicatrans=$(printf '%s' "$urltrans" | sed -E "s#://[0-9.]+:$GHOST_PORT_INT#://$myip:$GHOST_PORT_EXT#")
-										telegram "URL del canal $nombre transcodificado:"
+										telegram "URL del canal $nombre transcodificado:" "URL of channel $nombre, transcoded:"
 										telegram "$urlpublicatrans"
 									fi
 
@@ -2652,8 +2927,10 @@ then
 
 						""|*[!0-9]*)
 
-							registrar "Comando 'zap': falta o no es valido el numero de canal ('$numero')"
-							telegram "Uso: zap X (por ejemplo: zap 3). Pide 'lista' para ver los números disponibles"
+							registrar "Comando 'zap': falta o no es valido el numero de canal ('$numero')" \
+								"Command 'zap': the channel number is missing or not valid ('$numero')"
+							telegram "Uso: zap X (por ejemplo: zap 3). Pide 'lista' para ver los números disponibles" \
+								"Usage: zap X (for example: zap 3). Send 'list' to see the available numbers"
 
 						;;
 
@@ -2664,8 +2941,9 @@ then
 
 							if [ -z "$urlbase" ]; then
 
-								registrar "Comando 'zap $numero': no existe ese numero"
-								telegram "No existe ese número de canal. Pide 'lista' para ver los disponibles"
+								registrar "Comando 'zap $numero': no existe ese numero" "Command 'zap $numero': that number does not exist"
+								telegram "No existe ese número de canal. Pide 'lista' para ver los disponibles" \
+									"That channel number does not exist. Send 'list' to see the available ones"
 
 							else
 
@@ -2674,7 +2952,7 @@ then
 								# cambio real de canal en el deco. --max-time corta
 								# la conexión por sí solo (sin depender de `timeout`,
 								# que en algunos builds de busybox no existe).
-								registrar "Comando 'zap $numero' -> $nombrezap"
+								registrar "Comando 'zap $numero' -> $nombrezap" "Command 'zap $numero' -> $nombrezap"
 
 								curl -s --max-time 3 -o /dev/null "$urlbase"
 								rc_zap=$?
@@ -2682,12 +2960,13 @@ then
 								# rc 28 es el corte por --max-time: aqui es lo
 								# normal y significa que el stream iba bien.
 								if [ "$rc_zap" -eq 28 ] || [ "$rc_zap" -eq 0 ]; then
-									registrar "Zap completado (curl rc=$rc_zap)"
+									registrar "Zap completado (curl rc=$rc_zap)" "Zap done (curl rc=$rc_zap)"
 								else
-									registrar "ATENCION: el zap puede no haber funcionado (curl rc=$rc_zap)"
+									registrar "ATENCION: el zap puede no haber funcionado (curl rc=$rc_zap)" \
+										"WARNING: the zap may not have worked (curl rc=$rc_zap)"
 								fi
 
-								telegram "Zap a $nombrezap"
+								telegram "Zap a $nombrezap" "Zap to $nombrezap"
 
 							fi
 
@@ -2700,9 +2979,9 @@ then
 
 				# log: manda el fichero de log como documento (log.txt).
 				# estado: resumen de si todo funciona. Ver enviar_estado().
-				"estado")
+				"estado"|"status")
 
-					registrar "Comando 'estado'"
+					registrar "Comando 'estado'" "Command 'status'"
 					enviar_estado
 
 				;;
@@ -2710,7 +2989,7 @@ then
 
 				"log")
 
-					registrar "Comando 'log': enviando $log como log.txt"
+					registrar "Comando 'log': enviando $log como log.txt" "Command 'log': sending $log as log.txt"
 
 					telegram_documento "$log" "log.txt"
 
@@ -2719,26 +2998,26 @@ then
 
 				# encender: saca al deco de standby (powerstate 4). Solo sirve desde standby
 				# normal: en apagado profundo el bot no esta corriendo.
-				"encender")
+				"encender"|"power_on")
 
-					registrar "Comando 'encender'"
+					registrar "Comando 'encender'" "Command 'power_on'"
 
-					powerstate 4 "salir de standby"
+					powerstate 4 "$(t "salir de standby" "leave standby")"
 
-					telegram "Encendiendo el deco (saliendo de standby)"
+					telegram "Encendiendo el deco (saliendo de standby)" "Switching the box on (leaving standby)"
 
 				;;
 
 
 				# suspender: standby normal (powerstate 5). El bot sigue vivo y puede despertar
 				# al deco con encender.
-				"suspender")
+				"suspender"|"standby")
 
-					registrar "Comando 'suspender'"
+					registrar "Comando 'suspender'" "Command 'standby'"
 
 					powerstate 5 "standby"
 
-					telegram "Deco a standby (no profundo)"
+					telegram "Deco a standby (no profundo)" "Box to standby (not deep)"
 
 				;;
 
@@ -2747,22 +3026,25 @@ then
 				# no corre: solo se vuelve a encender a mano. Se descarta si el bot lleva menos
 				# de 120 s en marcha (un mensaje viejo reentregado no debe apagar un deco recien
 				# arrancado).
-				"apagar")
+				"apagar"|"power_off")
 
 					segundos_encendido=$(( $(date +%s) - epoch_inicio ))
 
 					if [ "$segundos_encendido" -lt 120 ]; then
 
-						registrar "Comando 'apagar' DESCARTADO: el bot solo lleva ${segundos_encendido}s en marcha (proteccion de 120s)"
-						telegram "El deco lleva menos de 2 minutos encendido, no proceso el apagado por seguridad (posible mensaje duplicado)"
+						registrar "Comando 'apagar' DESCARTADO: el bot solo lleva ${segundos_encendido}s en marcha (proteccion de 120s)" \
+							"Command 'power_off' DISCARDED: the bot has only been running for ${segundos_encendido}s (120s protection)"
+						telegram "El deco lleva menos de 2 minutos encendido, no proceso el apagado por seguridad (posible mensaje duplicado)" \
+							"The box has been on for less than 2 minutes, I am not processing the power off for safety (possible duplicate message)"
 
 					else
 
-						registrar "Comando 'apagar' aceptado (bot en marcha desde hace ${segundos_encendido}s)"
+						registrar "Comando 'apagar' aceptado (bot en marcha desde hace ${segundos_encendido}s)" \
+							"Command 'power_off' accepted (bot running for ${segundos_encendido}s)"
 
-						telegram "Apagando el deco (apagado profundo)"
+						telegram "Apagando el deco (apagado profundo)" "Switching the box off (deep standby)"
 
-						powerstate 1 "apagado profundo"
+						powerstate 1 "$(t "apagado profundo" "deep standby")"
 
 					fi
 
@@ -2775,11 +3057,13 @@ then
 					# arriba, asi que si se vuelve a lanzar a mano no se
 					# reprocesa este mismo mensaje. Ojo: si el bot lo lanza
 					# un init/cron/watchdog, este puede volver a arrancarlo.
-					registrar "Comando 'exit': cerrando BOTikor v$VERSION (PID $$) tras $((SECONDS / 60)) min en marcha"
+					registrar "Comando 'exit': cerrando BOTikor v$VERSION (PID $$) tras $((SECONDS / 60)) min en marcha" \
+						"Command 'exit': closing BOTikor v$VERSION (PID $$) after $((SECONDS / 60)) min running"
 
-					telegram "Cerrando BOTikor v$VERSION. Para volver a arrancarlo hay que lanzarlo a mano en el deco"
+					telegram "Cerrando BOTikor v$VERSION. Para volver a arrancarlo hay que lanzarlo a mano en el deco" \
+						"Closing BOTikor v$VERSION. To start it again it has to be launched by hand on the box"
 
-					registrar "BOTikor cerrado por comando 'exit'"
+					registrar "BOTikor cerrado por comando 'exit'" "BOTikor closed by command 'exit'"
 
 					exit 0
 
@@ -2788,7 +3072,7 @@ then
 
 				# reiniciar_deco: reinicia el deco entero (powerstate 2), con la misma proteccion
 				# de 120 s que apagar.
-				"reiniciar_deco")
+				"reiniciar_deco"|"reboot_box")
 
 					# Misma proteccion que "apagar": si el bot acaba de
 					# arrancar, un mensaje viejo reentregado por Telegram
@@ -2797,18 +3081,21 @@ then
 
 					if [ "$segundos_encendido" -lt 120 ]; then
 
-						registrar "Comando 'reiniciar_deco' DESCARTADO: el bot solo lleva ${segundos_encendido}s en marcha (proteccion de 120s)"
-						telegram "El bot lleva menos de 2 minutos en marcha, no proceso el reinicio del deco por seguridad (posible mensaje duplicado)"
+						registrar "Comando 'reiniciar_deco' DESCARTADO: el bot solo lleva ${segundos_encendido}s en marcha (proteccion de 120s)" \
+							"Command 'reboot_box' DISCARDED: the bot has only been running for ${segundos_encendido}s (120s protection)"
+						telegram "El bot lleva menos de 2 minutos en marcha, no proceso el reinicio del deco por seguridad (posible mensaje duplicado)" \
+							"The bot has been running for less than 2 minutes, I am not processing the box reboot for safety (possible duplicate message)"
 
 					else
 
 						# Se avisa ANTES: el reinicio se lleva por delante
 						# al propio script.
-						registrar "Comando 'reiniciar_deco' aceptado (bot en marcha desde hace ${segundos_encendido}s)"
+						registrar "Comando 'reiniciar_deco' aceptado (bot en marcha desde hace ${segundos_encendido}s)" \
+							"Command 'reboot_box' accepted (bot running for ${segundos_encendido}s)"
 
-						telegram "Reiniciando el deco..."
+						telegram "Reiniciando el deco..." "Rebooting the box..."
 
-						powerstate 2 "reinicio del deco"
+						powerstate 2 "$(t "reinicio del deco" "box reboot")"
 
 					fi
 
@@ -2817,13 +3104,14 @@ then
 
 				# reiniciar_bot: relanza este mismo script con exec (mismo PID) conservando el
 				# offset, para que arranque limpio sin reiniciar el deco.
-				"reiniciar_bot")
+				"reiniciar_bot"|"restart_bot")
 
 					# El offset ya se ha guardado mas arriba, asi que al
 					# relanzar no se vuelve a procesar este mismo mensaje.
-					registrar "Comando 'reiniciar_bot': relanzando $SCRIPT_PATH con offset $OFFSET"
+					registrar "Comando 'reiniciar_bot': relanzando $SCRIPT_PATH con offset $OFFSET" \
+						"Command 'restart_bot': restarting $SCRIPT_PATH with offset $OFFSET"
 
-					telegram "Reiniciando BOTikor v$VERSION..."
+					telegram "Reiniciando BOTikor v$VERSION..." "Restarting BOTikor v$VERSION..."
 
 					echo "$OFFSET" > "$OFFSET_FILE"
 
@@ -2841,43 +3129,48 @@ then
 				# parar_stream: corta los streams activos (los de Enigma2 y los de ghostreamy)
 				# sin reiniciar nada. Mecanismo en parar_streams() (RST); lo que sigue solo
 				# decide que mensaje mandar segun el resultado.
-				"parar_stream")
+				"parar_stream"|"stop_stream")
 
 					# Cortar streams no reinicia nada ni es peligroso, asi que
 					# aqui NO hay proteccion de 120s (solo la necesitan apagar y
 					# reiniciar el deco). Ver parar_streams() mas arriba.
-					registrar "Comando 'parar_stream' | streams confirmados=$N_ESTADO"
+					registrar "Comando 'parar_stream' | streams confirmados=$N_ESTADO" "Command 'stop_stream' | confirmed streams=$N_ESTADO"
 
 					parar_streams
 					rc_parar=$?
 
 					if [ "$rc_parar" -eq 2 ]; then
 
-						telegram "No he podido cortar los streams: ha fallado el script de corte ($CORTE_ERROR)"
+						telegram "No he podido cortar los streams: ha fallado el script de corte ($CORTE_ERROR)" \
+							"I could not cut the streams: the cutting script has failed ($CORTE_ERROR)"
 
 					elif [ "${CORTE_ANTES:-0}" -eq 0 ] && [ -z "$CORTE_ERROR" ]; then
 
-						telegram "No había ningún stream activo que cortar"
+						telegram "No había ningún stream activo que cortar" "There was no active stream to cut"
 
 					elif [ "${CORTE_CORTADAS:-0}" -eq 0 ]; then
 
-						telegram "No he conseguido cortar el stream: he mandado ${CORTE_RST:-0} RST y la conexión sigue abierta (challenge ACK: ${CORTE_CHALLENGE:-?}).${CORTE_ERROR:+ $CORTE_ERROR} Mira el log para más detalles"
+						telegram "No he conseguido cortar el stream: he mandado ${CORTE_RST:-0} RST y la conexión sigue abierta (challenge ACK: ${CORTE_CHALLENGE:-?}).${CORTE_ERROR:+ $CORTE_ERROR} Mira el log para más detalles" \
+							"I did not manage to cut the stream: I sent ${CORTE_RST:-0} RST and the connection is still open (challenge ACK: ${CORTE_CHALLENGE:-?}).${CORTE_ERROR:+ $CORTE_ERROR} Check the log for more details"
 
 					else
 
 						# Se cuentan clientes (IPs), no conexiones: ver parar_streams().
 						if [ "$CORTE_NCLIENTES" -eq 1 ]; then
-							cortado_txt="Stream cortado (cliente: $CORTE_CLIENTES)"
+							cortado_txt=$(t "Stream cortado (cliente: $CORTE_CLIENTES)" "Stream cut (client: $CORTE_CLIENTES)")
 						elif [ "$CORTE_NCLIENTES" -gt 1 ]; then
-							cortado_txt="Streams cortados: $CORTE_NCLIENTES clientes (${CORTE_CLIENTES//,/, })"
+							cortado_txt=$(t "Streams cortados: $CORTE_NCLIENTES clientes (${CORTE_CLIENTES//,/, })" \
+								"Streams cut: $CORTE_NCLIENTES clients (${CORTE_CLIENTES//,/, })")
 						else
-							cortado_txt="Cortadas las conexiones internas de ghostreamy (sin ningún cliente visible)"
+							cortado_txt=$(t "Cortadas las conexiones internas de ghostreamy (sin ningún cliente visible)" \
+								"Cut the internal ghostreamy connections (no visible client)")
 						fi
 
 						if [ -n "$CORTE_ERROR" ]; then
-							telegram "$cortado_txt. Algún aviso: $CORTE_ERROR"
+							telegram "$cortado_txt. Algún aviso: $CORTE_ERROR" "$cortado_txt. Some warning: $CORTE_ERROR"
 						elif [ "$RESTANTES" -gt 0 ]; then
-							telegram "$cortado_txt, pero siguen abiertas $RESTANTES conexión(es) en los puertos $STREAMPORT_NATIVO/$GHOST_PORT_INT (puede que algún cliente haya reconectado solo)"
+							telegram "$cortado_txt, pero siguen abiertas $RESTANTES conexión(es) en los puertos $STREAMPORT_NATIVO/$GHOST_PORT_INT (puede que algún cliente haya reconectado solo)" \
+								"$cortado_txt, but $RESTANTES connection(s) are still open on ports $STREAMPORT_NATIVO/$GHOST_PORT_INT (some client may have reconnected by itself)"
 						else
 							telegram "$cortado_txt"
 						fi
@@ -2887,12 +3180,12 @@ then
 				;;
 
 
-				# Cualquier otra cosa (incluido un "hola"): se contesta con la ayuda. Este texto
-				# es la unica lista de comandos que ve la persona: mantenerla igual que el case
-				# y que ARQUITECTURA.md.
+				# Cualquier otra cosa (incluido un "hola"): se contesta con la ayuda. Estos
+				# textos son la unica lista de comandos que ve la persona: mantenerlos igual
+				# que el case y que ARQUITECTURA.md.
 				*)
 
-					registrar "Comando no reconocido: '$(resumir "$MESSAGE")'"
+					registrar "Comando no reconocido: '$(resumir "$MESSAGE")'" "Unknown command: '$(resumir "$MESSAGE")'"
 					telegram "Comandos disponibles:
 /lista
 /canal X
@@ -2908,6 +3201,22 @@ then
 /parar_stream
 /reiniciar_deco
 /reiniciar_bot
+/exit" \
+						"Available commands:
+/list
+/channel X
+/zap X
+/update_channels
+/update_botikor
+/downgrade X
+/log
+/status
+/power_on
+/standby
+/power_off
+/stop_stream
+/reboot_box
+/restart_bot
 /exit"
 
 				;;
@@ -2954,9 +3263,9 @@ else
 
 			echo "$lastfile" >> listagrabaciones
 
-			registrar "Nueva grabacion detectada: $lastfile"
+			registrar "Nueva grabacion detectada: $lastfile" "New recording detected: $lastfile"
 
-			telegram "Se ha iniciado una grabación: $lastfile"
+			telegram "Se ha iniciado una grabación: $lastfile" "A recording has started: $lastfile"
 
 		fi
 
@@ -3034,7 +3343,8 @@ if [ "$RAW_CONEXIONES" != "$RAW_PREVIO" ]; then
 		fallos_decod=0
 		if [ "$nuevos_vivos" != "$VIVOS" ]; then
 			VIVOS="$nuevos_vivos"
-			registrar "Conexiones de streaming en los puertos $STREAMPORT_NATIVO/$GHOST_PORT_INT: $([ -n "$VIVOS" ] && resumir "$VIVOS" || echo ninguna)"
+			registrar "Conexiones de streaming en los puertos $STREAMPORT_NATIVO/$GHOST_PORT_INT: $([ -n "$VIVOS" ] && resumir "$VIVOS" || echo ninguna)" \
+				"Streaming connections on ports $STREAMPORT_NATIVO/$GHOST_PORT_INT: $([ -n "$VIVOS" ] && resumir "$VIVOS" || echo none)"
 		fi
 	else
 		# Si python falla NO se da por vacio el estado (se anunciarian como
@@ -3042,7 +3352,8 @@ if [ "$RAW_CONEXIONES" != "$RAW_PREVIO" ]; then
 		# reintenta en el ciclo siguiente.
 		fallos_decod=$((fallos_decod + 1))
 		if [ "$fallos_decod" -eq 1 ] || [ $((fallos_decod % 60)) -eq 0 ]; then
-			registrar "ATENCION: no se han podido decodificar las conexiones de streaming (rc=$rc_decod, fallo consecutivo $fallos_decod). Se mantiene el estado anterior"
+			registrar "ATENCION: no se han podido decodificar las conexiones de streaming (rc=$rc_decod, fallo consecutivo $fallos_decod). Se mantiene el estado anterior" \
+				"WARNING: the streaming connections could not be decoded (rc=$rc_decod, consecutive failure $fallos_decod). Keeping the previous state"
 		fi
 	fi
 
@@ -3110,8 +3421,13 @@ if [ -n "$VIVOS$PEND$ESTADO" ]; then
 			[ -n "$f_tipo" ] || continue
 			[ "$f_canal" = "-" ] && f_canal=""
 			duracion_txt $((SECONDS - f_inicio))
-			registrar "Stream terminado: $f_tipo $f_ip:$f_puerto canal='${f_canal}' duracion=$DUR_TXT"
-			agregar_linea mensaje "Stream terminado: $f_ip${f_canal:+, $f_canal} (duró $DUR_TXT)"
+			registrar "Stream terminado: $f_tipo $f_ip:$f_puerto canal='${f_canal}' duracion=$DUR_TXT" \
+				"Stream ended: $f_tipo $f_ip:$f_puerto channel='${f_canal}' duration=$DUR_TXT"
+			if en_ingles; then
+				agregar_linea mensaje "Stream ended: $f_ip${f_canal:+, $f_canal} (lasted $DUR_TXT)"
+			else
+				agregar_linea mensaje "Stream terminado: $f_ip${f_canal:+, $f_canal} (duró $DUR_TXT)"
+			fi
 		done <<< "$FINALIZADOS"
 
 		if [ -n "$ESTADO" ]; then
@@ -3131,7 +3447,8 @@ if [ -n "$VIVOS$PEND$ESTADO" ]; then
 
 		if [ -z "$resueltos" ]; then
 			# Sin canales (python o OpenWebIF han fallado): se anuncia igualmente.
-			registrar "ATENCION: no se ha podido resolver el canal de los streams nuevos (OpenWebIF sin respuesta o python3 fallido)"
+			registrar "ATENCION: no se ha podido resolver el canal de los streams nuevos (OpenWebIF sin respuesta o python3 fallido)" \
+				"WARNING: the channel of the new streams could not be resolved (no answer from OpenWebIF or python3 failed)"
 			resueltos=""
 			while IFS=$'\t' read -r r_tipo r_ip r_puerto r_visto r_n; do
 				[ -n "$r_tipo" ] || continue
@@ -3156,17 +3473,23 @@ if [ -n "$VIVOS$PEND$ESTADO" ]; then
 			# conservando su contador, por si ghostreamy tarda en pedir el
 			# canal y luego si resulta ser un stream.
 			if [ "$n_canal" = "!" ]; then
-				[ "${n_n:-2}" -eq 2 ] && registrar "Conexion a ghostreamy sin stream detras (navegacion web?): $n_ip:$n_puerto. No se anuncia; se sigue vigilando"
+				[ "${n_n:-2}" -eq 2 ] && registrar "Conexion a ghostreamy sin stream detras (navegacion web?): $n_ip:$n_puerto. No se anuncia; se sigue vigilando" \
+					"Connection to ghostreamy with no stream behind it (web browsing?): $n_ip:$n_puerto. Not announced; still watching it"
 				agregar_linea PEND "$n_tipo$TAB$n_ip$TAB$n_puerto$TAB${n_n:-2}$TAB$n_inicio"
 				continue
 			fi
 
 			agregar_linea ESTADO "$n_tipo$TAB$n_ip$TAB$n_puerto$TAB$n_canal$TAB$n_inicio"
 			canal_log=$n_canal
-			[ "$canal_log" = "-" ] && canal_log="(desconocido)"
-			registrar "Stream confirmado (2 ciclos): $n_tipo $n_ip:$n_puerto canal='$canal_log'"
+			[ "$canal_log" = "-" ] && canal_log=$(t "(desconocido)" "(unknown)")
+			registrar "Stream confirmado (2 ciclos): $n_tipo $n_ip:$n_puerto canal='$canal_log'" \
+				"Stream confirmed (2 cycles): $n_tipo $n_ip:$n_puerto channel='$canal_log'"
 			nuevos_n=$((nuevos_n + 1))
-			agregar_linea nuevos_txt "Nuevo cliente conectado: $n_ip"
+			if en_ingles; then
+				agregar_linea nuevos_txt "New client connected: $n_ip"
+			else
+				agregar_linea nuevos_txt "Nuevo cliente conectado: $n_ip"
+			fi
 			# (al llegar a EOF, `read` vacia sus variables: se guarda el ultimo)
 			ult_tipo=$n_tipo
 			ult_ip=$n_ip
@@ -3178,12 +3501,18 @@ if [ -n "$VIVOS$PEND$ESTADO" ]; then
 			if [ "$previos" -eq 0 ] && [ "$nuevos_n" -eq 1 ]; then
 				# Un unico stream activo: el mensaje de siempre.
 				[ "$ult_canal" = "-" ] && ult_canal=""
-				mensaje="Stream iniciado${NL}Origen: $ult_ip${NL}vía $ult_tipo"
-				[ -n "$ult_canal" ] && mensaje="$mensaje${NL}Canal: $ult_canal"
+				[ "$ult_tipo" = "directo" ] && ult_tipo="$TXT_DIRECTO"
+				if en_ingles; then
+					mensaje="Stream started${NL}From: $ult_ip${NL}via $ult_tipo"
+					[ -n "$ult_canal" ] && mensaje="$mensaje${NL}Channel: $ult_canal"
+				else
+					mensaje="Stream iniciado${NL}Origen: $ult_ip${NL}vía $ult_tipo"
+					[ -n "$ult_canal" ] && mensaje="$mensaje${NL}Canal: $ult_canal"
+				fi
 			else
 				lista_activos
 				if [ "$previos" -eq 0 ]; then
-					mensaje="Streams iniciados$NL$NL$LISTA_ACTIVOS"
+					mensaje="$(t "Streams iniciados" "Streams started")$NL$NL$LISTA_ACTIVOS"
 				else
 					mensaje="$nuevos_txt$NL$NL$LISTA_ACTIVOS"
 				fi
@@ -3203,7 +3532,8 @@ fi
 ciclos=$((ciclos + 1))
 
 if [ $((ciclos % 360)) -eq 0 ]; then
-	registrar "Latido: $ciclos ciclos | offset $OFFSET | IP en cache ${myip:-(sin consultar)} | streams=$N_ESTADO | fallos de red seguidos=$fallos_red"
+	registrar "Latido: $ciclos ciclos | offset $OFFSET | IP en cache ${myip:-(sin consultar)} | streams=$N_ESTADO | fallos de red seguidos=$fallos_red" \
+		"Heartbeat: $ciclos cycles | offset $OFFSET | cached IP ${myip:-(not checked)} | streams=$N_ESTADO | consecutive network failures=$fallos_red"
 fi
 
 # Pausa entre ciclos: es la resolucion temporal de todo el bot. Un comando se

@@ -7,6 +7,11 @@
 #   herramientas/publicar_version.sh            # pregunta antes de publicar
 #   herramientas/publicar_version.sh --si       # sin preguntar
 #   herramientas/publicar_version.sh --notas "Texto de la release"
+#   herramientas/publicar_version.sh --notas-fichero notas.md
+#
+# La release se titula como su etiqueta (v1.0.1), igual que en los demas
+# proyectos de vkthor. Las notas van en ingles y en espanol, en ese orden; sin
+# --notas ni --notas-fichero se usa un texto corto en los dos idiomas.
 #
 # Antes de publicar comprueba que: no hay cambios sin guardar, main esta
 # subido a GitHub, el script pasa bash -n, TOKEN e ID estan vacios, la
@@ -18,11 +23,13 @@ set -euo pipefail
 FICHERO="botikor.sh"
 confirmar=1
 notas=""
+notas_fichero=""
 
 while [ $# -gt 0 ]; do
 	case "$1" in
 		--si) confirmar=0 ;;
 		--notas) shift; notas="${1:-}" ;;
+		--notas-fichero) shift; notas_fichero="${1:-}" ;;
 		*) echo "Opcion desconocida: $1" >&2; exit 2 ;;
 	esac
 	shift
@@ -36,6 +43,11 @@ elif [ -x "/c/Program Files/GitHub CLI/gh.exe" ]; then
 	GH="/c/Program Files/GitHub CLI/gh.exe"
 else
 	fallo "no encuentro GitHub CLI (gh)"
+fi
+
+if [ -n "$notas_fichero" ]; then
+	[ -s "$notas_fichero" ] || fallo "no existe (o esta vacio) el fichero de notas $notas_fichero"
+	notas=$(cat "$notas_fichero")
 fi
 
 cd "$(git rev-parse --show-toplevel)" || fallo "no estoy dentro del repositorio"
@@ -80,14 +92,24 @@ fi
 ( cd "$trabajo" && sha256sum "$FICHERO" > "$FICHERO.sha256" )
 huella=$(cut -d' ' -f1 "$trabajo/$FICHERO.sha256")
 
-[ -n "$notas" ] || notas="BOTikor $version (beta). Para instalarla en el deco basta con enviar /actualizar_botikor al bot."
+if [ -z "$notas" ]; then
+	notas="**English**
+
+BOTikor $etiqueta (beta). To install it on the box, just send /update_botikor to the bot.
+
+**Español**
+
+BOTikor $etiqueta (beta). Para instalarla en el deco basta con enviar /actualizar_botikor al bot."
+fi
 
 echo
 echo "Se va a publicar:"
 echo "  Version:   $etiqueta (ultima publicada: ${ultima:-ninguna})"
 echo "  Commit:    $(git log -1 --format='%h %s')"
 echo "  SHA-256:   $huella"
-echo "  Notas:     $notas"
+echo "  Titulo:    $etiqueta"
+echo "  Notas:"
+printf '%s\n' "$notas" | sed 's/^/             /'
 echo
 
 if [ "$confirmar" = 1 ]; then
@@ -96,7 +118,7 @@ if [ "$confirmar" = 1 ]; then
 fi
 
 "$GH" release create "$etiqueta" "$trabajo/$FICHERO" "$trabajo/$FICHERO.sha256" \
-	--target "$(git rev-parse HEAD)" --title "BOTikor $version" --notes "$notas"
+	--target "$(git rev-parse HEAD)" --title "$etiqueta" --notes "$notas"
 
 # 5. Comprobacion: lo publicado coincide con lo que se queria publicar
 mkdir "$trabajo/bajado"
