@@ -17,7 +17,7 @@
 
 # VERSION: formato X.Y.Z (tres enteros). La leen actualizar_botikor y
 # downgrade_botikor con grep '^VERSION=' sobre el fichero descargado y la
-# comparan como tupla numerica (3.1.10 es mas nueva que 3.1.9). Por eso esta
+# comparan como tupla numerica (1.0.10 es mas nueva que 1.0.9). Por eso esta
 # linea debe empezar por VERSION=, ir entre comillas y ser la PRIMERA del
 # fichero que lo haga. Los cambios de cada version: CHANGELOG.md. Al mostrarla
 # se escribe con v delante (v1.0.1), igual que la etiqueta de la release.
@@ -1818,7 +1818,7 @@ decodificar_conexiones() {
 # Las entradas que ya corresponden a streams anunciados se descuentan
 # primero (asi, dos ventanas desde la misma IP no se pisan el canal).
 # Entrada: NUEVOS = "tipo ip puerto visto". Salida: "tipo ip puerto canal visto".
-# Valor del campo canal en la salida (desde la 3.1.13):
+# Valor del campo canal en la salida:
 #   nombre   el canal que ve ese stream segun Streaming_list;
 #   -        canal desconocido: se anuncia el stream sin canal (tambien si
 #            OpenWebIF no respondio o no trajo Streaming_list);
@@ -2190,8 +2190,8 @@ actualizar_botikor() {
 # Cada vez que se lanza el comando se pide a la API de GitHub la lista de
 # releases de $REPO_GITHUB (nunca se reutiliza una copia anterior). Solo
 # cuentan las publicadas (no borradores) con etiqueta vX.Y.Z. X puede
-# escribirse 4.0.0, v4.0.0 o 400; si sin puntos encaja con varias (3.1.11 y
-# 31.1.1), se pide que se escriba con puntos. Si existe, se descarga y se
+# escribirse 1.0.1, v1.0.1 o 101; si sin puntos encaja con varias (1.11.1 y
+# 11.1.1), se pide que se escriba con puntos. Si existe, se descarga y se
 # instala igual que una actualizacion (huella SHA-256, validacion de
 # sintaxis, copia en .anterior, exec), sea
 # mas vieja o mas nueva que la instalada.
@@ -2792,8 +2792,8 @@ then
 			# numero = segunda palabra (el parametro: numero de canal, version...).
 			# OJO: si el mensaje no tiene espacios, "cut -f 2" devuelve la linea entera, es
 			# decir, $numero == $MESSAGE. Por eso los comandos con parametro validan que sea
-			# numerico y, si no, explican su uso. Desde la 3.1.14 el comando se pasa a
-			# minusculas: el teclado del movil suele poner mayuscula inicial ("Lista").
+			# numerico y, si no, explican su uso. El comando se pasa a minusculas: el
+			# teclado del movil suele poner mayuscula inicial ("Lista").
 			comando=$(echo "$MESSAGE" | cut -d ' ' -f 1)
 			comando="${comando#/}"
 			comando=$(printf '%s' "$comando" | tr '[:upper:]' '[:lower:]')

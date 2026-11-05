@@ -185,7 +185,7 @@ Sin ellos, ghostreamy abre un stream aparte y el deco no se mueve (comprobado en
 - El estado de los streams es texto: una línea por elemento, campos separados por tabuladores, en variables normales (sin arrays asociativos). Ver «ESTADO DE LOS STREAMS: FUNCIONES DE APOYO» en el script.
 - Python embebido en heredocs `<<-'PYEOF'` (comilla simple: bash no interpreta nada dentro). El contenido va sangrado con **tabuladores**, que `<<-` elimina: no empezar línea con espacios. Los datos entran por argumentos o variables de entorno, no interpolados en el código (única excepción: la comparación de versiones de `actualizar_botikor`).
 - Fichero en UTF-8 y con saltos de línea LF (no CRLF: bash se rompe con el `\r`). Si se edita en Windows, usar un editor de código, no Word.
-- `VERSION="X.Y.Z"` debe ser la **primera** línea del fichero que empiece por `VERSION=`. La leen `actualizar_botikor` y `downgrade_botikor` (con `version_de`) y la comparan como tupla de enteros (3.1.10 > 3.1.9). Va sin `v` a propósito: así la leen también las instalaciones de la v1.0.0. Hacia fuera siempre se escribe con `v` delante (`v1.0.1`): en los mensajes, en `downgrade`, en la etiqueta y en el título de la release.
+- `VERSION="X.Y.Z"` debe ser la **primera** línea del fichero que empiece por `VERSION=`. La leen `actualizar_botikor` y `downgrade_botikor` (con `version_de`) y la comparan como tupla de enteros (1.0.10 > 1.0.9). Va sin `v` a propósito: así la leen también las instalaciones de la v1.0.0. Hacia fuera siempre se escribe con `v` delante (`v1.0.1`): en los mensajes, en `downgrade`, en la etiqueta y en el título de la release.
 
 ## Cómo se publica una versión
 
@@ -206,7 +206,7 @@ Las funciones se prueban sueltas en cualquier Linux con bash y python3:
 2. Definir stubs de `registrar()` y `telegram()` que impriman, y de `curl()` que devuelva un JSON de prueba.
 3. Hacer `source`.
 
-Para el bucle de streams, simular `VIVOS` y ejecutar ciclo a ciclo el bloque entre «Contabilidad barata» y «Latido cada» (así se verificó la 3.1.13). Para un `case` del despachador, extraer el bloque con `awk` desde la etiqueta hasta su `;;` y envolverlo en un `case` de prueba . Siempre `bash -n` antes de publicar.
+Para el bucle de streams, simular `VIVOS` y ejecutar ciclo a ciclo el bloque entre «Contabilidad barata» y «Latido cada». Para un `case` del despachador, extraer el bloque con `awk` desde la etiqueta hasta su `;;` y envolverlo en un `case` de prueba. Siempre `bash -n` antes de publicar.
 
 ## Limitaciones conocidas
 
@@ -219,6 +219,3 @@ Para el bucle de streams, simular `VIVOS` y ejecutar ciclo a ciclo el bloque ent
 7. Un único chat autorizado (`ID`).
 8. Latencia: un comando se atiende en el siguiente ciclo (hasta ~5 s) y un stream se anuncia tras verlo dos ciclos seguidos (~10 s).
 9. `zap` no puede confirmar que el deco haya cambiado de canal.
-
-## Ideas pendientes (por orden de utilidad)
-

@@ -1,15 +1,15 @@
-# Notas privadas de Claude (acceso a la red del dueño, preferencias)
+# Notas locales de trabajo (no se publican)
 CLAUDE.local.md
 .claude/settings.local.json
 
-# Ficheros que no son del proyecto público (versiones antiguas, puentes...)
+# Ficheros locales que no son del proyecto
 privado/
 
 # Configuración con secretos (token, ID de chat, contraseñas)
 botikor.conf
 *.conf.bak
 
-# Copias del script tal como están en un deco (llevan el token dentro)
+# Copias del script tal como están en un deco
 *.anterior
 *_deco.sh
 deco*.sh
@@ -28,7 +28,7 @@ botikor_nuevo.sh
 botikor_nuevo.sha256
 botikor_versiones.tmp
 
-# Tutorial antiguo (obsoleto)
+# PDF sueltos que no forman parte del repositorio
 botikor-tutorial_v*.pdf
 
 # Basura del sistema
