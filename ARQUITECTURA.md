@@ -31,12 +31,13 @@ No necesita servidor propio ni abrir puertos para Telegram: el bot **pregunta** 
 4. **Funciones de apoyo** (se definen antes de usarse):
    - log y salida: `registrar`, `resumir`, `telegram`, `escapar_html`, `telegram_html`, `telegram_documento`
    - acciones: `powerstate`, `parar_streams`, `obtener_ip_publica`
+   - IP local: `detectar_lan`, `lan_grupo`, `elegir_lan`, `texto_lan`, `enviar_canal` (ver «IP local»)
    - estado de streams: `agregar_linea`, `contar_lineas`, `clave_en`, `duracion_txt`, `lista_activos`, `decodificar_conexiones`, `resolver_canales`
    - canales: `cargar_canales`
    - configuración en uso: comprobación de `TOKEN`/`ID` (sin ellos se cierra), `WEBIF_AUTH`, `fijar_puerto_ghost`
    - actualizaciones: `instalar_script_descargado`, `descargar_verificado`, `version_de`, `actualizar_botikor`, `downgrade_botikor`
    - hora: `sincronizar_hora`
-5. **Secuencia de arranque**: `cargar_canales`, `sincronizar_hora`, aviso de «iniciado», IP pública.
+5. **Secuencia de arranque**: `cargar_canales`, `sincronizar_hora`, IP pública e IP local, aviso de «iniciado» (con las dos IP y, si hay más de una interfaz, la lista) y, si hay varias IP locales igual de buenas, la pregunta de cuál usar.
 6. **Bucle principal** (cada ~5 s): sondeo de Telegram y despacho de comandos, detección de grabaciones, detección de streams, latido, `sleep 5`.
 
 El bucle es secuencial y de un solo hilo a propósito: un comando lento (`parar_stream` tarda hasta ~10 s) retrasa la vigilancia ese rato, pero a cambio todo el estado son unas pocas variables de bash, sin carreras.
@@ -78,7 +79,7 @@ Fuera de él:
 Cada instalación tiene su configuración en `botikor.conf`, en el directorio de trabajo, con permisos 600. El script no lleva ningún dato de nadie, así que se actualiza o se publica tal cual. `botikor.conf.ejemplo` explica cada clave.
 
 - **Formato:** una línea `CLAVE=valor`; se ignoran las vacías y las que empiezan por `#`. El valor es literal, sin comillas (si va entero entre comillas, se quitan). Se quitan los espacios de alrededor salvo en `WEBIF_CLAVE`, así que una contraseña puede llevar `$`, `"`, `` ` ``, `\` o espacios. El fichero **nunca se ejecuta**: `leer_conf` lo lee línea a línea y solo acepta las claves de `CLAVES_CONF`; las demás se anotan en el log.
-- **Claves:** `IDIOMA` (`es` o `en`; sin ella, o con otro valor, `es`), `TOKEN` e `ID` (obligatorias), `WEBIF`, `WEBIF_USUARIO`, `WEBIF_CLAVE`, `GHOSTLIST`, `GHOSTLIST_URL` (ver «Lista de canales»), `GHOST_PORT_INT` (`auto` = el puerto más repetido en las URLs de la lista; si no hay, 3138), `GHOST_PORT_EXT` (vacío = el interno), `STREAMPORT_NATIVO`, `OSCAM_LOG` (`/tmp/oscam.log`; vacío = no se mira) y `GRABACIONES` (carpeta donde graba el deco; `/hdd/movie`; la configuración inicial solo la pregunta si esa no existe).
+- **Claves:** `IDIOMA` (`es` o `en`; sin ella, o con otro valor, `es`), `TOKEN` e `ID` (obligatorias), `WEBIF`, `WEBIF_USUARIO`, `WEBIF_CLAVE`, `GHOSTLIST`, `GHOSTLIST_URL` (ver «Lista de canales»), `GHOST_PORT_INT` (`auto` = el puerto más repetido en las URLs de la lista; si no hay, 3138), `GHOST_PORT_EXT` (vacío = el interno), `STREAMPORT_NATIVO`, `OSCAM_LOG` (`/tmp/oscam.log`; vacío = no se mira), `GRABACIONES` (carpeta donde graba el deco; `/hdd/movie`; la configuración inicial solo la pregunta si esa no existe) e `INTERFAZ_LAN` (`auto` o un nombre de interfaz; ver «IP local»; la configuración inicial no la pregunta).
 - **Configuración inicial:** si falta el fichero (o el `TOKEN` o el `ID`) y el script se lanza a mano desde una terminal (`[ -t 0 ]`), `configuracion_inicial` pregunta primero el idioma (1 español, por defecto; 2 inglés; la pregunta va en los dos idiomas) y después hace cinco preguntas:
   1. el token, que comprueba con `getMe`;
   2. el chat: pide escribir al bot y lo lee con `getUpdates`, saltándose los mensajes pendientes para que no se ejecute un comando viejo;
@@ -126,6 +127,15 @@ En la web de ghostreamy, menú **Listas**, cada lista del usuario tiene una «m3
 - La URL nunca va al log: se registra con `url_lista_segura`, que solo muestra el host y el puerto.
 - Comprobado en un deco real: la «m3u URL» de la lista usada, pedida por `127.0.0.1`, devuelve exactamente el mismo fichero que se había descargado a mano.
 
+## IP local
+
+`canal_local X` da las URLs del canal con la IP del deco en la red de casa y el puerto **interno** de ghostreamy (`GHOST_PORT_INT`), para verlo en casa sin pasar por el router. No se pregunta nada en la instalación: la IP se averigua al arrancar y cada vez que hace falta (`canal_local`, `lan`, `estado`), así que sigue los cambios de DHCP y vale para quien actualiza desde una versión anterior.
+
+- `detectar_lan` (Python, `ioctl` SIOCGIFFLAGS y SIOCGIFADDR sobre `socket.if_nameindex()`) deja en `LAN_LISTA` las interfaces levantadas con IPv4, sin `lo` ni `169.254.x.x`: una línea `interfaz<TAB>ip`, sólo con la dirección principal de cada una.
+- `elegir_lan` fija `LAN_IFACE` y `LAN_IP`. Con `INTERFAZ_LAN=nombre`, esa interfaz si tiene IP (si no, como `auto`, y lo anota en el log). Con `auto`: el grupo mejor de los que haya (1: `192.168.x.x`; 2: otras privadas, `10.x` y `172.16-31.x`; 3: el resto) y, dentro de él, la que ya se usaba o, si no, `eth*` antes que las demás. Si en ese grupo hay más de una, `LAN_DUDA=1`. Sólo escribe en el log cuando cambia la elegida.
+- **Pregunta al arrancar:** con `LAN_DUDA=1` e `INTERFAZ_LAN=auto` se manda la lista con un `/lan_N` por interfaz. El bot no se queda esperando: usa la provisional y la respuesta la atiende el comando `lan` cuando llegue. Se guarda con `cambiar_clave_conf INTERFAZ_LAN …`, así que no se vuelve a preguntar.
+- `lan` (igual en los dos idiomas): sin nada, lista las IP y cuál se usa; `lan_N` o `lan N` elige la N de esa lista, `lan eth0` una por su nombre y `lan_auto` vuelve a `auto`. La numeración es la de la detección del momento.
+
 ## OSCam
 
 `/estado` dice si se está descifrando bien leyendo el log de OSCam (`OSCAM_LOG`, por defecto `/tmp/oscam.log`; vale para cualquier versión). `estado_oscam` lee el final del fichero (como mucho 400 KB) y mira los últimos `OSCAM_VENTANA` segundos (300):
@@ -151,13 +161,15 @@ Se aceptan con o sin `/` delante, en mayúsculas o minúsculas. Cada uno tiene u
 |---|---|---|
 | `lista` | `list` | Canales numerados. Si no caben en un mensaje de Telegram (4096 caracteres), van en varios, cortando entre líneas. |
 | `canal X` | `channel X` | URL pública del canal X (y la transcodificada). |
+| `canal_local X` | `channel_local X` | Lo mismo con la IP local y el puerto interno (ver «IP local»). Vale también con guion (`canal-local`). |
+| `lan` | `lan` | IP locales del deco y cuál usa `canal_local`; `lan_N`, `lan nombre` o `lan_auto` la cambian y la guardan en `INTERFAZ_LAN`. |
 | `zap X` | `zap X` | Cambia el deco al canal X (ver «Cómo funciona zap»). |
 | `actualizar_canales` | `update_channels` | Con `GHOSTLIST_URL`, descarga la lista de ghostreamy (si falla, se queda la anterior); después la vuelve a leer. |
 | `actualizar_botikor` | `update_botikor` | Descarga la última release y, si es más nueva, la instala. |
 | `downgrade X` | `downgrade X` | Instala la versión X publicada (`v1.0.0`, `1.0.0` o `100`); sin X, las lista (con `v` delante). |
 | `log` | `log` | Envía el log (últimos arranques) como `log.txt`. |
 | `idioma X` | `language X` | Cambia el idioma al momento (`es`/`en`; también `español`, `english`…): guarda sólo la línea `IDIOMA` de `botikor.conf` (`cambiar_clave_conf`, que respeta el resto del fichero), recalcula los `TXT_*`, rehace `/etc/init.d/botikor` si lo creó BOTikor y manda la ayuda en el idioma nuevo. Sin X, dice el actual. |
-| `estado` | `status` | Resumen de si todo funciona: versión, tiempo en marcha, si responden OpenWebIF (y qué canal se ve) y ghostreamy, cómo va OSCam (ver «OSCam»), canales y de dónde sale la lista, streams en curso, IP pública y grabaciones con el espacio libre. Solo consulta. |
+| `estado` | `status` | Resumen de si todo funciona: versión, tiempo en marcha, si responden OpenWebIF (y qué canal se ve) y ghostreamy, cómo va OSCam (ver «OSCam»), canales y de dónde sale la lista, streams en curso, IP pública, IP local y grabaciones con el espacio libre. Solo consulta. |
 | `encender` | `power_on` | Saca al deco de standby. |
 | `suspender` | `standby` | Standby normal (el bot sigue vivo). |
 | `apagar` | `power_off` | Apagado **profundo** (el bot deja de correr). |
@@ -219,3 +231,4 @@ Para el bucle de streams, simular `VIVOS` y ejecutar ciclo a ciclo el bloque ent
 7. Un único chat autorizado (`ID`).
 8. Latencia: un comando se atiende en el siguiente ciclo (hasta ~5 s) y un stream se anuncia tras verlo dos ciclos seguidos (~10 s).
 9. `zap` no puede confirmar que el deco haya cambiado de canal.
+10. `canal_local` sólo usa IPv4 y la dirección principal de cada interfaz. No comprueba que el aparato que abre la URL esté en esa red.

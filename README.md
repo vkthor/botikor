@@ -54,6 +54,8 @@ Each command has an English and a Spanish name, and the bot accepts both whateve
 |---|---|---|
 | `/list` | `/lista` | Numbered channel list. |
 | `/channel X` | `/canal X` | Link to watch channel X away from home (and the transcoded one, if there is one). |
+| `/channel_local X` | `/canal_local X` | The same links with the box's address in your home network, to watch channel X at home. |
+| `/lan` | `/lan` | The box's local IPs and which one `/channel_local` uses; `/lan_N` chooses another one. |
 | `/zap X` | `/zap X` | Puts channel X on the box. |
 | `/update_channels` | `/actualizar_canales` | Downloads the channel list from ghostreamy again. |
 | `/status` | `/estado` | Summary of whether everything works. |

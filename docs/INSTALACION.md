@@ -89,11 +89,14 @@ Ya puedes cerrar la terminal.
 
 ## 7. Comprueba que funciona
 
-En Telegram, tu bot te habrá escrito «BOTikor v… iniciado». Prueba:
+En Telegram, tu bot te habrá escrito «BOTikor v… iniciado», con la IP pública (WAN) y la IP local (LAN) del deco. Prueba:
 
 - `/estado`: te dice si todo responde (OpenWebIF, ghostreamy, OSCam, canales…).
 - `/lista`: tus canales numerados.
 - `/zap 1`: la tele de casa debería cambiar al canal 1.
+- `/canal_local 1`: los enlaces para ver el canal 1 en otro aparato de casa (VLC, Kodi…), sin tocar el router.
+
+Si el deco tiene varias IP locales que pueden valer (por ejemplo, cable y wifi en la misma red), el bot te pregunta cuál usar: toca la que quieras (`/lan_1`, `/lan_2`…). Se guarda como `INTERFAZ_LAN=` en `botikor.conf` y puedes cambiarla cuando quieras con `/lan`.
 
 Si algo no va, mira las [preguntas frecuentes](FAQ.es.md).
 

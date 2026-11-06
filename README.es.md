@@ -54,6 +54,8 @@ Cada comando tiene un nombre en español y otro en inglés, y el bot acepta los 
 |---|---|---|
 | `/lista` | `/list` | Lista de canales numerada. |
 | `/canal X` | `/channel X` | Enlace para ver el canal X fuera de casa (y el transcodificado, si lo hay). |
+| `/canal_local X` | `/channel_local X` | Los mismos enlaces con la dirección del deco en la red de casa, para ver el canal X en casa. |
+| `/lan` | `/lan` | Las IP locales del deco y cuál usa `/canal_local`; `/lan_N` elige otra. |
 | `/zap X` | `/zap X` | Pone el canal X en el deco. |
 | `/actualizar_canales` | `/update_channels` | Vuelve a descargar la lista de canales de ghostreamy. |
 | `/estado` | `/status` | Resumen de si todo funciona. |

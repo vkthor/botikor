@@ -51,6 +51,12 @@ If `/update_channels` fails, the bot keeps using the previous list.
 - **Has your IP changed?** The link contains the public IP at the moment you asked for it. Ask for it again.
 - **Is someone else watching something?** The free version of ghostreamy only allows one client at a time.
 
+## `/channel_local` gives an address that doesn't work at home
+
+- **Is it the right network?** The box may have several (cable, Wi-Fi, a VPN…). Send `/lan` to see its local IPs and tap the one of your home network (`/lan_N`). It is saved in `botikor.conf` (`INTERFAZ_LAN=`); `/lan_auto` lets the bot choose again (it prefers the `192.168.x.x` ones).
+- **Is the device in the same network as the box?** A guest Wi-Fi network usually can't see the rest.
+- **Is someone else watching something?** The free version of ghostreamy only allows one client at a time.
+
 ## `/status` says OSCam has PROBLEMS
 
 It means that in the last 5 minutes many decryptions have failed ("timeout", "not found"…) or that a reader cannot connect to its server. It is usually a problem with your key server, not with the box or the bot. Check the state of your readers in the OSCam web page.

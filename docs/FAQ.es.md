@@ -51,6 +51,12 @@ Si `/actualizar_canales` falla, el bot sigue usando la lista anterior.
 - **¿Ha cambiado tu IP?** El enlace lleva la IP pública del momento en que lo pediste. Pídelo otra vez.
 - **¿Alguien más está viendo algo?** La versión gratuita de ghostreamy sólo admite un cliente a la vez.
 
+## `/canal_local` da una dirección que no funciona en casa
+
+- **¿Es la red buena?** El deco puede tener varias (cable, wifi, una VPN…). Envía `/lan` para ver sus IP locales y toca la de tu red de casa (`/lan_N`). Se guarda en `botikor.conf` (`INTERFAZ_LAN=`); con `/lan_auto` el bot vuelve a elegirla él (prefiere las `192.168.x.x`).
+- **¿El aparato está en la misma red que el deco?** Una wifi de invitados no suele ver al resto.
+- **¿Alguien más está viendo algo?** La versión gratuita de ghostreamy sólo admite un cliente a la vez.
+
 ## `/estado` dice que OSCam tiene PROBLEMAS
 
 Significa que en los últimos 5 minutos muchos descifrados han fallado («timeout», «not found»…) o que un lector no consigue conectar con su servidor. Normalmente es un problema de tu servidor de claves, no del deco ni del bot. Mira en la web de OSCam el estado de tus lectores.

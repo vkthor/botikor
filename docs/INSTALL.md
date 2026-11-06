@@ -89,11 +89,14 @@ You can close the terminal now.
 
 ## 7. Check that it works
 
-In Telegram, your bot will have sent you "BOTikor v… started". Try:
+In Telegram, your bot will have sent you "BOTikor v… started", with the box's public IP (WAN) and local IP (LAN). Try:
 
 - `/status`: tells you whether everything answers (OpenWebIF, ghostreamy, OSCam, channels…).
 - `/list`: your numbered channels.
 - `/zap 1`: the TV at home should switch to channel 1.
+- `/channel_local 1`: the links to watch channel 1 on another device at home (VLC, Kodi…), no router changes needed.
+
+If the box has several local IPs that could do (for example, cable and Wi-Fi in the same network), the bot asks you which one to use: tap the one you want (`/lan_1`, `/lan_2`…). It is saved as `INTERFAZ_LAN=` in `botikor.conf`, and you can change it at any time with `/lan`.
 
 If something doesn't work, see the [frequently asked questions](FAQ.md).
 

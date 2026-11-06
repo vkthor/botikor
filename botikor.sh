@@ -21,7 +21,7 @@
 # linea debe empezar por VERSION=, ir entre comillas y ser la PRIMERA del
 # fichero que lo haga. Los cambios de cada version: CHANGELOG.md. Al mostrarla
 # se escribe con v delante (v1.0.1), igual que la etiqueta de la release.
-VERSION="1.0.1"
+VERSION="1.0.2"
 # REPO_GITHUB: repositorio de GitHub donde se publican las versiones. Cada una
 # es una "release" con etiqueta vX.Y.Z y dos ficheros: botikor.sh (sin ninguna
 # configuracion: esta va en botikor.conf) y botikor.sh.sha256 (su huella). Lo usan
@@ -81,6 +81,9 @@ log=botikor.log
 #                      de cada grabacion nueva (*.ts) que aparece en ella
 #   OSCAM_LOG          log de OSCam (/tmp/oscam.log); "estado" lo lee para
 #                      decir si se esta descifrando bien. Vacio: no se mira
+#   INTERFAZ_LAN       interfaz de red cuya IP da "canal_local" (eth0, wlan0...).
+#                      "auto" (o sin ella): la elige el bot al arrancar (ver
+#                      IP LOCAL); el comando lan la cambia desde Telegram
 #
 # Si falta el fichero (o el TOKEN o el ID) y el script se lanza a mano desde
 # una terminal, pregunta los datos y lo crea (configuracion_inicial). En un
@@ -107,8 +110,9 @@ GHOST_PORT_EXT=""
 STREAMPORT_NATIVO="8001"
 GRABACIONES="/hdd/movie"
 OSCAM_LOG="/tmp/oscam.log"
+INTERFAZ_LAN="auto"
 
-CLAVES_CONF="IDIOMA TOKEN ID WEBIF WEBIF_USUARIO WEBIF_CLAVE GHOSTLIST GHOSTLIST_URL GHOST_PORT_INT GHOST_PORT_EXT STREAMPORT_NATIVO GRABACIONES OSCAM_LOG"
+CLAVES_CONF="IDIOMA TOKEN ID WEBIF WEBIF_USUARIO WEBIF_CLAVE GHOSTLIST GHOSTLIST_URL GHOST_PORT_INT GHOST_PORT_EXT STREAMPORT_NATIVO GRABACIONES OSCAM_LOG INTERFAZ_LAN"
 
 # ============================================================
 
@@ -1068,6 +1072,14 @@ if [ ! -d "$GRABACIONES" ]; then
 		"WARNING: the recordings folder $GRABACIONES does not exist (or is not mounted): there will be no recording alerts until it appears"
 fi
 
+# INTERFAZ_LAN: "auto" o un nombre de interfaz (eth0, wlan0, br-lan...).
+[ -n "$INTERFAZ_LAN" ] || INTERFAZ_LAN="auto"
+if [ "$INTERFAZ_LAN" != "auto" ] && ! [[ "$INTERFAZ_LAN" =~ ^[A-Za-z0-9_.:-]{1,15}$ ]]; then
+	registrar "ATENCION: INTERFAZ_LAN='$INTERFAZ_LAN' no es un nombre de interfaz; se usa auto" \
+		"WARNING: INTERFAZ_LAN='$INTERFAZ_LAN' is not an interface name; using auto"
+	INTERFAZ_LAN="auto"
+fi
+
 # Usuario y contrasena de OpenWebIF como argumentos de curl. Es un array para
 # que la contrasena llegue entera aunque lleve espacios o simbolos.
 WEBIF_AUTH=()
@@ -1666,6 +1678,214 @@ obtener_ip_publica() {
 
 	myip_ts=$ip_ahora
 	return 0
+}
+
+# ============================================================
+
+# IP LOCAL (LAN)
+#
+# "canal_local X" da las URLs del canal con la IP del deco en la red de casa y
+# el puerto interno de ghostreamy, para verlo sin salir a Internet. La IP se
+# averigua al arrancar y cada vez que se pide (canal_local, lan, estado): sigue
+# los cambios de DHCP y no hay que preguntarla en la instalacion.
+#
+# detectar_lan deja en LAN_LISTA las interfaces levantadas con IPv4 (sin lo ni
+# 169.254.x.x), una linea "interfaz<TAB>ip" por cada una (solo la direccion
+# principal de cada interfaz). elegir_lan escoge una (LAN_IFACE, LAN_IP):
+#   - INTERFAZ_LAN=nombre (botikor.conf): esa, si existe y tiene IP; si no, auto.
+#   - INTERFAZ_LAN=auto: entre las 192.168.x.x; si no hay, entre las otras
+#     privadas (10.x, 172.16-31.x); si tampoco, cualquiera. Dentro del grupo, la
+#     que ya se estaba usando o, si no, eth* antes que las demas.
+# Si en ese grupo hay mas de una, LAN_DUDA=1: al arrancar se pregunta por
+# Telegram cual usar (/lan_N, ver el comando lan) y la respuesta se guarda en
+# INTERFAZ_LAN, asi que no se vuelve a preguntar.
+
+# ============================================================
+
+LAN_LISTA=""
+LAN_IFACE=""
+LAN_IP=""
+LAN_DUDA=0
+LAN_AVISADA=""
+
+detectar_lan() {
+	LAN_LISTA=$(python3 - 2>/dev/null <<-'PYEOF'
+		import fcntl, socket, struct
+		s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+		for _, nombre in socket.if_nameindex():
+		    pedido = struct.pack("256s", nombre[:15].encode())
+		    try:
+		        flags = struct.unpack("H", fcntl.ioctl(s.fileno(), 0x8913, pedido)[16:18])[0]
+		        ip = socket.inet_ntoa(fcntl.ioctl(s.fileno(), 0x8915, pedido)[20:24])
+		    except OSError:
+		        continue
+		    if not flags & 1 or flags & 8 or ip.startswith(("127.", "169.254.")):
+		        continue
+		    print("%s\t%s" % (nombre, ip))
+		PYEOF
+	)
+}
+
+# Grupo de preferencia de una IP (en GRUPO): 1 = 192.168.x.x, 2 = otra privada,
+# 3 = el resto.
+lan_grupo() {
+	case "$1" in
+		192.168.*) GRUPO=1 ;;
+		10.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*) GRUPO=2 ;;
+		*) GRUPO=3 ;;
+	esac
+}
+
+elegir_lan() {
+	local iface ip mejor=4 n=0 prioridad=3 p elegida="" elegida_ip="" motivo motivo_en
+	LAN_DUDA=0
+	if [ "$INTERFAZ_LAN" != "auto" ]; then
+		while IFS=$'\t' read -r iface ip; do
+			if [ -n "$ip" ] && [ "$iface" = "$INTERFAZ_LAN" ]; then
+				elegida="$iface"
+				elegida_ip="$ip"
+			fi
+		done <<< "$LAN_LISTA"
+		motivo="fijada en $CONF"
+		motivo_en="set in $CONF"
+	fi
+	if [ -z "$elegida" ]; then
+		while IFS=$'\t' read -r iface ip; do
+			[ -n "$ip" ] || continue
+			lan_grupo "$ip"
+			[ "$GRUPO" -lt "$mejor" ] && mejor=$GRUPO
+		done <<< "$LAN_LISTA"
+		while IFS=$'\t' read -r iface ip; do
+			[ -n "$ip" ] || continue
+			lan_grupo "$ip"
+			[ "$GRUPO" = "$mejor" ] || continue
+			n=$((n + 1))
+			if [ "$iface" = "$LAN_IFACE" ]; then
+				p=0
+			else
+				case "$iface" in
+					eth*) p=1 ;;
+					*) p=2 ;;
+				esac
+			fi
+			if [ "$p" -lt "$prioridad" ]; then
+				prioridad=$p
+				elegida="$iface"
+				elegida_ip="$ip"
+			fi
+		done <<< "$LAN_LISTA"
+		[ "$n" -gt 1 ] && LAN_DUDA=1
+		if [ "$INTERFAZ_LAN" != "auto" ]; then
+			motivo="INTERFAZ_LAN=$INTERFAZ_LAN no tiene IP ahora; elegida automaticamente"
+			motivo_en="INTERFAZ_LAN=$INTERFAZ_LAN has no IP now; chosen automatically"
+		else
+			motivo="elegida automaticamente entre $n"
+			motivo_en="chosen automatically among $n"
+		fi
+	fi
+	if [ "$elegida" != "$LAN_IFACE" ] || [ "$elegida_ip" != "$LAN_IP" ] || [ -z "$LAN_AVISADA" ]; then
+		LAN_AVISADA=1
+		if [ -n "$elegida" ]; then
+			registrar "IP local: $elegida $elegida_ip ($motivo) | interfaces: $(printf '%s' "$LAN_LISTA" | tr '\t\n' ' ,')" \
+				"Local IP: $elegida $elegida_ip ($motivo_en) | interfaces: $(printf '%s' "$LAN_LISTA" | tr '\t\n' ' ,')"
+		else
+			registrar "ATENCION: el deco no tiene ninguna IP local (IPv4) en uso" "WARNING: the box has no local IP (IPv4) in use"
+		fi
+	fi
+	LAN_IFACE="$elegida"
+	LAN_IP="$elegida_ip"
+	[ -n "$LAN_IP" ]
+}
+
+# Lista de interfaces para Telegram, una por linea y marcando la que se usa.
+# Con "enlaces", cada una empieza por /lan_N (el comando que la elige).
+texto_lan() {
+	local iface ip n=0 marca
+	while IFS=$'\t' read -r iface ip; do
+		[ -n "$ip" ] || continue
+		n=$((n + 1))
+		marca=""
+		[ "$iface" = "$LAN_IFACE" ] && marca=" $(t "(en uso)" "(in use)")"
+		if [ "$1" = "enlaces" ]; then
+			printf '/lan_%s %s %s%s\n' "$n" "$iface" "$ip" "$marca"
+		else
+			printf '• %s: %s%s\n' "$iface" "$ip" "$marca"
+		fi
+	done <<< "$LAN_LISTA"
+}
+
+# enviar_canal publica|local NUMERO: lo que hacen "canal X" y "canal_local X".
+# Manda en mensajes separados el titulo y la URL del canal NUMERO, y lo mismo
+# con la transcodificada si la lista la trae. Las URLs de canalurls vienen con
+# 127.0.0.1 (ver LISTA DE CANALES DESDE GHOSTREAMY):
+#   publica  "IP:INT" -> "IP-publica:EXT", para fuera de casa. Necesita la IP
+#            publica y el puerto abierto en el router.
+#   local    "IP:INT" -> "IP-local:INT", para la red de casa (ver IP LOCAL).
+enviar_canal() {
+	local modo="$1" num="$2" cmd cmd_en nombre urlbase urltrans host puerto prefijo prefijo_en
+	if [ "$modo" = "local" ]; then
+		cmd="canal_local"; cmd_en="channel_local"
+		prefijo="URL local"; prefijo_en="Local URL"
+	else
+		cmd="canal"; cmd_en="channel"
+		prefijo="URL"; prefijo_en="URL"
+	fi
+
+	case "$num" in
+		""|*[!0-9]*)
+			registrar "Comando '$cmd': falta o no es valido el numero de canal ('$num')" \
+				"Command '$cmd_en': the channel number is missing or not valid ('$num')"
+			telegram "Uso: $cmd X (por ejemplo: $cmd 3). Pide 'lista' para ver los números disponibles" \
+				"Usage: $cmd_en X (for example: $cmd_en 3). Send 'list' to see the available numbers"
+			return 1
+			;;
+	esac
+
+	nombre=$(sed "${num}q;d" canalnombres 2>/dev/null)
+	urlbase=$(sed "${num}q;d" canalurls 2>/dev/null)
+	urltrans=$(sed "${num}q;d" canalurlstrans 2>/dev/null)
+
+	if [ -z "$urlbase" ]; then
+		registrar "Comando '$cmd $num': no existe ese numero" "Command '$cmd_en $num': that number does not exist"
+		telegram "No existe ese número de canal. Pide 'lista' para ver los disponibles" \
+			"That channel number does not exist. Send 'list' to see the available ones"
+		return 1
+	fi
+
+	registrar "Comando '$cmd $num' -> $nombre (con transcodificada: $([ -n "$urltrans" ] && echo si || echo no))" \
+		"Command '$cmd_en $num' -> $nombre (with transcoded: $([ -n "$urltrans" ] && echo yes || echo no))"
+
+	if [ "$modo" = "local" ]; then
+		detectar_lan
+		if ! elegir_lan; then
+			registrar "Comando '$cmd $num': sin IP local, no se puede montar la URL" \
+				"Command '$cmd_en $num': no local IP, the URL cannot be built"
+			telegram "El deco no tiene ahora ninguna IP local, así que no puedo montar la URL de $nombre" \
+				"The box has no local IP right now, so I cannot build the URL of $nombre"
+			return 1
+		fi
+		host="$LAN_IP"
+		puerto="$GHOST_PORT_INT"
+	else
+		obtener_ip_publica
+		if [ -z "$myip" ]; then
+			registrar "Comando '$cmd $num': sin IP publica, no se puede montar la URL" \
+				"Command '$cmd_en $num': no public IP, the URL cannot be built"
+			telegram "Ahora mismo no consigo averiguar la IP pública, así que no puedo montar la URL de $nombre. Inténtalo de nuevo en un momento" \
+				"I cannot find out the public IP right now, so I cannot build the URL of $nombre. Try again in a moment"
+			return 1
+		fi
+		host="$myip"
+		puerto="$GHOST_PORT_EXT"
+	fi
+
+	telegram "$prefijo del canal $nombre:" "$prefijo_en of channel $nombre:"
+	telegram "$(printf '%s' "$urlbase" | sed -E "s#://[0-9.]+:$GHOST_PORT_INT#://$host:$puerto#")"
+
+	if [ -n "$urltrans" ]; then
+		telegram "$prefijo del canal $nombre transcodificado:" "$prefijo_en of channel $nombre, transcoded:"
+		telegram "$(printf '%s' "$urltrans" | sed -E "s#://[0-9.]+:$GHOST_PORT_INT#://$host:$puerto#")"
+	fi
 }
 
 # ============================================================
@@ -2487,6 +2707,8 @@ enviar_ayuda() {
 	telegram "Comandos disponibles:
 /lista
 /canal X
+/canal_local X
+/lan
 /zap X
 /actualizar_canales
 /actualizar_botikor
@@ -2504,6 +2726,8 @@ enviar_ayuda() {
 		"Available commands:
 /list
 /channel X
+/channel_local X
+/lan
 /zap X
 /update_channels
 /update_botikor
@@ -2581,6 +2805,16 @@ $(t "Streams en curso: ${N_ESTADO:-0}" "Streams in progress: ${N_ESTADO:-0}")"
 	obtener_ip_publica
 	txt="$txt
 $(t "IP pública: ${myip:-no se ha podido consultar}" "Public IP: ${myip:-could not be checked}")"
+
+	# IP local (la de "canal_local").
+	detectar_lan
+	if elegir_lan; then
+		txt="$txt
+$(t "IP local: $LAN_IP ($LAN_IFACE)" "Local IP: $LAN_IP ($LAN_IFACE)")"
+	else
+		txt="$txt
+$(t "IP local: ninguna" "Local IP: none")"
+	fi
 
 	# Grabaciones: carpeta, cuantas hay y espacio libre.
 	if [ -d "$GRABACIONES" ]; then
@@ -2686,21 +2920,53 @@ fecha_arranque() {
 
 if sincronizar_hora
 then
-	fechainicio=$(fecha_arranque)
-	telegram "BOTikor v$VERSION iniciado. $fechainicio" "BOTikor v$VERSION started. $fechainicio"
+	hora_ok=1
 else
-	fechainicio=$(fecha_arranque)
-	telegram "BOTikor v$VERSION iniciado (aviso: no se pudo sincronizar la hora por internet). $fechainicio" \
-		"BOTikor v$VERSION started (warning: the time could not be synchronized over the Internet). $fechainicio"
+	hora_ok=0
 fi
+fechainicio=$(fecha_arranque)
 
 # epoch_inicio: instante de arranque, tomado DESPUES de sincronizar la hora (si
 # no, un salto de reloj falsearia el calculo). Lo usan apagar y reiniciar_deco
 # para su proteccion de 120 s.
 epoch_inicio=$(date +%s)
 
-# IP publica: una sola consulta al arrancar (queda en cache y en el log).
+# IP publica (una sola consulta al arrancar: queda en cache y en el log) e IP
+# local (ver IP LOCAL). Las dos van en el aviso de arranque, con la lista de
+# interfaces si hay mas de una.
 obtener_ip_publica
+detectar_lan
+elegir_lan
+
+if [ "$hora_ok" = 1 ]; then
+	aviso_inicio=$(t "BOTikor v$VERSION iniciado. $fechainicio" "BOTikor v$VERSION started. $fechainicio")
+else
+	aviso_inicio=$(t "BOTikor v$VERSION iniciado (aviso: no se pudo sincronizar la hora por internet). $fechainicio" \
+		"BOTikor v$VERSION started (warning: the time could not be synchronized over the Internet). $fechainicio")
+fi
+aviso_inicio="$aviso_inicio
+$(t "IP pública (WAN): ${myip:-no se ha podido consultar}" "Public IP (WAN): ${myip:-could not be checked}")
+$(t "IP local (LAN): ${LAN_IP:-ninguna}${LAN_IFACE:+ ($LAN_IFACE)}" "Local IP (LAN): ${LAN_IP:-none}${LAN_IFACE:+ ($LAN_IFACE)}")"
+if [ "$(printf '%s\n' "$LAN_LISTA" | grep -c .)" -gt 1 ]; then
+	aviso_inicio="$aviso_inicio
+Interfaces:
+$(texto_lan)"
+fi
+telegram "$aviso_inicio"
+
+# Varias IP locales igual de buenas y ninguna elegida en botikor.conf: se
+# pregunta cual usar. El bot no se para a esperar: sigue con la provisional y
+# la respuesta (/lan_N) la atiende el comando lan cuando llegue.
+if [ "$LAN_DUDA" = 1 ] && [ "$INTERFAZ_LAN" = "auto" ]; then
+	registrar "Varias IP locales posibles: se pregunta por Telegram cual usar (provisional: $LAN_IFACE $LAN_IP)" \
+		"Several possible local IPs: asking in Telegram which one to use (provisional: $LAN_IFACE $LAN_IP)"
+	telegram "El deco tiene varias IP locales que pueden valer para /canal_local:
+$(texto_lan enlaces)
+Mientras tanto uso $LAN_IFACE. Toca la que prefieras: la guardo en $CONF y no te lo vuelvo a preguntar (puedes cambiarla cuando quieras con /lan)." \
+		"The box has several local IPs that could do for /channel_local:
+$(texto_lan enlaces)
+Meanwhile I am using $LAN_IFACE. Tap the one you prefer: I save it in $CONF and won't ask again (you can change it at any time with /lan)."
+fi
 
 registrar "Entrando en el bucle principal (sondeo a Telegram cada 5s)" "Entering the main loop (polling Telegram every 5s)"
 
@@ -2922,66 +3188,101 @@ then
 				# canal X: da la URL publica del canal X (y la transcodificada si la lista la
 				# trae) para abrirla fuera de casa (VLC, Kodi...). Cambia "IP-local:INT" por
 				# "IP-publica:EXT" (ver GHOST_PORT_EXT). Necesita la IP publica y el puerto
-				# abierto en el router.
+				# abierto en el router. Ver enviar_canal.
 				"canal"|"channel")
 
-					case "$numero" in
+					enviar_canal publica "$numero"
 
-						""|*[!0-9]*)
+				;;
 
-							registrar "Comando 'canal': falta o no es valido el numero de canal ('$numero')" \
-								"Command 'channel': the channel number is missing or not valid ('$numero')"
-							telegram "Uso: canal X (por ejemplo: canal 3). Pide 'lista' para ver los números disponibles" \
-								"Usage: channel X (for example: channel 3). Send 'list' to see the available numbers"
 
-						;;
+				# canal_local X: lo mismo con la IP del deco en la red de casa y el puerto
+				# interno (ver IP LOCAL y enviar_canal). Tambien vale con guion.
+				"canal_local"|"channel_local"|"canal-local"|"channel-local")
 
+					enviar_canal local "$numero"
+
+				;;
+
+
+				# lan: lista las IP locales del deco y cual usa canal_local. "lan_N" (o
+				# "lan N") elige la N de esa lista, "lan eth0" una interfaz por su nombre, y
+				# "lan_auto" deja que la elija el bot. La eleccion se guarda en INTERFAZ_LAN
+				# (solo esa linea de botikor.conf, ver cambiar_clave_conf). Es tambien la
+				# respuesta a la pregunta del arranque cuando hay varias posibles.
+				"lan"|lan_*)
+
+					eleccion="${comando#lan}"
+					eleccion="${eleccion#_}"
+					[ -z "$eleccion" ] && [ "$numero" != "$MESSAGE" ] && eleccion="$numero"
+					detectar_lan
+					elegir_lan
+					iface_nueva=""
+
+					case "$eleccion" in
+						"")
+							;;
+						auto|AUTO|Auto)
+							iface_nueva="auto"
+							;;
+						*[!0-9]*)
+							printf '%s\n' "$LAN_LISTA" | cut -f 1 | grep -qxF -- "$eleccion" && iface_nueva="$eleccion"
+							;;
 						*)
-
-							nombre=$(sed "${numero}q;d" canalnombres 2>/dev/null)
-							urlbase=$(sed "${numero}q;d" canalurls 2>/dev/null)
-							urltrans=$(sed "${numero}q;d" canalurlstrans 2>/dev/null)
-
-							if [ -z "$urlbase" ]; then
-
-								registrar "Comando 'canal $numero': no existe ese numero" "Command 'channel $numero': that number does not exist"
-								telegram "No existe ese número de canal. Pide 'lista' para ver los disponibles" \
-									"That channel number does not exist. Send 'list' to see the available ones"
-
-							else
-
-								registrar "Comando 'canal $numero' -> $nombre (con transcodificada: $([ -n "$urltrans" ] && echo si || echo no))" \
-									"Command 'channel $numero' -> $nombre (with transcoded: $([ -n "$urltrans" ] && echo yes || echo no))"
-
-								obtener_ip_publica
-
-								if [ -z "$myip" ]; then
-
-									registrar "Comando 'canal $numero': sin IP publica, no se puede montar la URL" \
-										"Command 'channel $numero': no public IP, the URL cannot be built"
-									telegram "Ahora mismo no consigo averiguar la IP pública, así que no puedo montar la URL de $nombre. Inténtalo de nuevo en un momento" \
-										"I cannot find out the public IP right now, so I cannot build the URL of $nombre. Try again in a moment"
-
-								else
-
-									urlpublica=$(printf '%s' "$urlbase" | sed -E "s#://[0-9.]+:$GHOST_PORT_INT#://$myip:$GHOST_PORT_EXT#")
-
-									telegram "URL del canal $nombre:" "URL of channel $nombre:"
-									telegram "$urlpublica"
-
-									if [ -n "$urltrans" ]; then
-										urlpublicatrans=$(printf '%s' "$urltrans" | sed -E "s#://[0-9.]+:$GHOST_PORT_INT#://$myip:$GHOST_PORT_EXT#")
-										telegram "URL del canal $nombre transcodificado:" "URL of channel $nombre, transcoded:"
-										telegram "$urlpublicatrans"
-									fi
-
-								fi
-
-							fi
-
-						;;
-
+							iface_nueva=$(printf '%s\n' "$LAN_LISTA" | grep . | sed "${eleccion}q;d" | cut -f 1)
+							;;
 					esac
+
+					if [ -z "$eleccion" ]; then
+
+						registrar "Comando 'lan': $LAN_IFACE $LAN_IP (INTERFAZ_LAN=$INTERFAZ_LAN)" \
+							"Command 'lan': $LAN_IFACE $LAN_IP (INTERFAZ_LAN=$INTERFAZ_LAN)"
+						if [ -z "$LAN_LISTA" ]; then
+							telegram "El deco no tiene ahora ninguna IP local." "The box has no local IP right now."
+						elif [ "$INTERFAZ_LAN" = "auto" ]; then
+							telegram "IP locales del deco:
+$(texto_lan enlaces)
+La elijo yo (/lan_auto). Toca otra para usarla siempre en /canal_local." \
+								"Local IPs of the box:
+$(texto_lan enlaces)
+I choose it myself (/lan_auto). Tap another one to always use it in /channel_local."
+						else
+							telegram "IP locales del deco:
+$(texto_lan enlaces)
+Elegida en $CONF: $INTERFAZ_LAN. Toca otra para cambiarla, o /lan_auto para que la elija yo." \
+								"Local IPs of the box:
+$(texto_lan enlaces)
+Chosen in $CONF: $INTERFAZ_LAN. Tap another one to change it, or /lan_auto to let me choose."
+						fi
+
+					elif [ -z "$iface_nueva" ]; then
+
+						registrar "Comando 'lan': no hay ninguna interfaz '$eleccion'" "Command 'lan': there is no interface '$eleccion'"
+						telegram "No hay ninguna IP local con ese número o nombre ($eleccion). Pide /lan para ver la lista" \
+							"There is no local IP with that number or name ($eleccion). Send /lan to see the list"
+
+					elif ! cambiar_clave_conf INTERFAZ_LAN "$iface_nueva"; then
+
+						registrar "ATENCION: no se ha podido guardar INTERFAZ_LAN=$iface_nueva en $(pwd)/$CONF" \
+							"WARNING: INTERFAZ_LAN=$iface_nueva could not be saved in $(pwd)/$CONF"
+						telegram "No he podido guardar la elección en $CONF, así que no la cambio" \
+							"I could not save the choice in $CONF, so I am not changing it"
+
+					else
+
+						INTERFAZ_LAN="$iface_nueva"
+						elegir_lan
+						registrar "INTERFAZ_LAN=$INTERFAZ_LAN guardado en $(pwd)/$CONF: $LAN_IFACE $LAN_IP" \
+							"INTERFAZ_LAN=$INTERFAZ_LAN saved in $(pwd)/$CONF: $LAN_IFACE $LAN_IP"
+						if [ "$INTERFAZ_LAN" = "auto" ]; then
+							telegram "Hecho: la IP local la elijo yo. Ahora uso $LAN_IP ($LAN_IFACE)." \
+								"Done: I choose the local IP myself. Now I am using $LAN_IP ($LAN_IFACE)."
+						else
+							telegram "Hecho: /canal_local usará siempre $LAN_IP ($LAN_IFACE). Guardado en $CONF." \
+								"Done: /channel_local will always use $LAN_IP ($LAN_IFACE). Saved in $CONF."
+						fi
+
+					fi
 
 				;;
 

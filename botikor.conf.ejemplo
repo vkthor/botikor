@@ -89,3 +89,13 @@ GRABACIONES=/hdd/movie
 # OSCam log. /status reads it to tell you whether decryption is working
 # (key server down, reader that cannot connect...). Empty: not checked.
 OSCAM_LOG=/tmp/oscam.log
+
+# Interfaz de red cuya IP local da /canal_local (eth0, wlan0...). Con "auto"
+# la elige el bot cada vez que arranca: prefiere las 192.168.x.x y, si hay
+# varias, te pregunta por Telegram cuál usar y guarda aquí tu respuesta.
+# También se cambia desde Telegram con /lan.
+# Network interface whose local IP /channel_local gives (eth0, wlan0...). With
+# "auto" the bot chooses it every time it starts: it prefers the 192.168.x.x
+# ones and, if there are several, it asks you in Telegram which one to use and
+# saves your answer here. It can also be changed from Telegram with /lan.
+INTERFAZ_LAN=auto
